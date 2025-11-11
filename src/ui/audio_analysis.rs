@@ -1,7 +1,6 @@
 use super::util;
 use crate::app::App;
 use ratatui::{
-  backend::Backend,
   layout::{Constraint, Direction, Layout},
   style::Style,
   text::{Line, Span},
@@ -12,10 +11,7 @@ const PITCHES: [&str; 12] = [
   "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
 
-pub fn draw<B>(f: &mut Frame<B>, app: &App)
-where
-  B: Backend,
-{
+pub fn draw(f: &mut Frame<'_>, app: &App) {
   let margin = util::get_main_layout_margin(app);
 
   let chunks = Layout::default()
