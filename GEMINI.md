@@ -94,7 +94,7 @@
   - Replaced leftover `for_position()` usages with `Offset::Position()`
   - Updated enum imports to use `model::enums::`
 
-### Core Functionality
+-### Core Functionality
 - ✅ **src/main.rs**: Async bootstrap + OAuth flow fully modernized for rspotify 0.12.
   - ✅ Token cache now handled via `spotify.token.lock().await`, with graceful fallback when the cache file is missing.
   - ✅ `start_tokio` runs inside `tokio::spawn`, so queued `IoEvent`s can `.await` network calls without lifetime hacks.
@@ -103,11 +103,10 @@
   - ✅ Added `use anyhow::anyhow;` to fix macro usage.
   - ✅ `Network` now owns an `Arc<Mutex<App>>`, eliminating the old `'a` lifetime bound.
   - ✅ Corrected `refresh_authentication` to be a proper no-op.
-- ✅ **src/ui/**: Updated UI components for `ratatui` 0.26.
-  - ✅ Replaced all `Spans` usages with `Line` in `src/ui/audio_analysis.rs` and `src/ui/mod.rs`.
-  - ✅ Fixed `Text` value double-move in `src/ui/mod.rs`.
-  - ✅ Corrected invalid `millis_to_minutes` call in `src/ui/mod.rs`.
-  - ✅ Fixed `segment.start` and `section.start` field access in `src/ui/audio_analysis.rs`.
+-  - ✅ Removed unused `EpisodeId` and `SystemTime` imports.
+-  - ⚠️ Stream API errors remain (artist_albums, playlists) - next priority after typed-ID dispatch fixes.
+- ✅ **src/cli/cli_app.rs**: Stripped leftover `<'a>` lifetimes from `CliApp` struct and impl.
+- 🔶 **src/ui/**: Base `ratatui` migration (Line/Text fixes, audio_analysis draw signature) landed, but most draw helpers in `src/ui/mod.rs` still use `Frame<B>` + `where B: Backend`, and duration/resume conversions still rely on `as_millis()` / `resume_position_ms`.
 
 ---
 
@@ -116,15 +115,23 @@
 ### High Priority - Core Functionality
 
 #### Typed Spotify IDs (Network + App)
-- ❌ `IoEvent` payloads and most `Network` methods still accept raw `String` IDs (`TrackId`, `AlbumId`, `ArtistId`, `ShowId`, `PlayableId`), causing the E0412 spam seen in `cargo check`.
-- ❌ `App` continues to store IDs as `String`s, so comparisons like queue lookups fail to compile against the typed IDs exposed by rspotify 0.12.
+- ✅ `IoEvent` payloads now use typed IDs (`TrackId`, `AlbumId`, `ArtistId`, `ShowId`, `PlaylistId`, `PlayableId`) from `rspotify::model::idtypes`
+- ✅ `network.rs` imports updated to use correct `idtypes` module instead of `id`
+- ✅ `app.rs` imports updated to use `idtypes`
+- ✅ `PlayContextId` replaces `ContextId` throughout  
+- ✅ App continues to store IDs as `String`s in HashSets (simpler comparison logic)
+- ❌ **Critical**: Handlers still dispatch String IDs; need conversion helpers in each handler file
+  - Pattern: `if let Ok(id) = TrackId::from_id(&id_string) { app.dispatch(...) }`
+  - Affects: track_table.rs, album_tracks.rs, recently_played.rs, playbar.rs, artist.rs, search_results.rs, input.rs, podcasts.rs, and many methods in app.rs
 
 #### Playback & Queue helpers
-- ❌ `start_playback`, queue additions, and recommendation helpers still build `String` URIs and offsets. They must switch to `PlayableId::from_uri`, `Offset::Position`, and propagate typed IDs through the `IoEvent` variants.
+- ❌ `start_playback`, queue additions still need typed ID conversions from handlers
+- ❌ Recommendation helpers in app.rs need typed ID conversions
 
-#### UI Typed-ID + Duration conversions
-- ❌ `src/ui/mod.rs` expects `String` IDs and `std::time::Duration`. Need `.to_string()` conversions (or typed storage) for album/playlist/episode IDs, and convert `chrono::TimeDelta` via `.num_milliseconds()`/`.num_seconds()`.
-- ❌ `ResumePoint` now exposes `resume_position`; the UI still references `resume_position_ms`.
+#### UI Ratatui Follow-ups
+- ❌ Most draw helpers in `src/ui/mod.rs` still use the old `Frame<B>` signatures and `where B: Backend` bounds; they need to switch to `Frame<'_>`.
+- ❌ Chrono `TimeDelta` fields are still accessed via `duration.as_millis()` and `ResumePoint::resume_position_ms`; convert to `.num_milliseconds()` and `resume_position`.
+- ❌ Queue lookup and ID comparisons may still fail if they expect typed IDs instead of Strings; decide whether to store typed IDs or stringify at render time.
 
 #### Tokio Updates
 - ✅ `tokio::time::delay_for()` has been fully removed; remaining async waits use `tokio::time::sleep`.
@@ -168,9 +175,9 @@
 ## Known Issues & Blockers
 
 ### Compilation Errors (Current)
-- `src/network.rs` still emits hundreds of E0412/E0308 errors because the `IoEvent` APIs accept `String` IDs while rspotify now requires typed IDs (`TrackId`, `AlbumId`, `ArtistId`, `ShowId`, `PlayableId`). Imports + conversions are missing.
-- `src/ui/mod.rs` expects `String` IDs and `std::time::Duration`, so any access to playlist/album/episode IDs or `ResumePoint::resume_position_ms` fails to compile.
-- Recommendation/start-playback helpers still mix `String` URIs with `PlayableId::from_uri`, leaving the queue + autoplay pipeline broken.
+- **UI frame/duration migration incomplete**: Most draw helpers in `src/ui/mod.rs` still use `Frame<B>` + `where B: Backend`, and duration fields still call `as_millis()` / `resume_position_ms`, so `cargo check` fails with E0107/E0599.
+- **Typed-ID dispatch conversions incomplete**: Handlers (track_table.rs, album_tracks.rs, playbar.rs, artist.rs, search_results.rs, input.rs, podcasts.rs, recently_played.rs, playlist.rs) and app.rs helper methods still dispatch `IoEvent`s with `String` IDs instead of calling `.into_static()` on typed IDs. This causes "does not live long enough" errors.
+- **Stream API incompatibility**: `rspotify 0.12` returns `Stream` types for paginated endpoints (artist_albums, playlists), but code tries to `.await` them directly. Need to collect/consume streams properly with `futures::StreamExt`.
 
 ### Design Decisions Needed
 1. Do we store typed IDs (`TrackId`, `AlbumId`, …) inside `App`/UI state, or do we continue storing Strings and convert at the rspotify call sites?
@@ -182,47 +189,50 @@
 ## File-by-File Status
 
 ### Core Files
-| File                  | Status          | Notes                                |
-| --------------------- | --------------- | ------------------------------------ |
-| `Cargo.toml`          | ✅ Updated       | Dependencies modernized              |
-| `src/main.rs`         | ✅ Updated       | Async bootstrap, token cache handling, and UI/CLI dispatch now compile + run. |
-| `src/network.rs`      | 🔶 Partial       | Owns `Arc<Mutex<App>>`, but IoEvents still use `String` IDs and old playback helpers. |
-| `src/redirect_uri.rs` | ✅ Updated       | Callback helper converted; unused `spotify` arg is the only warning. |
-| `src/config.rs`       | ⚠️ Unknown       | May need updates for new OAuth       |
-| `src/app.rs`          | ✅ Types updated | Model types renamed                  |
+| File                  | Status          | Notes                                                                                           |
+| --------------------- | --------------- | ----------------------------------------------------------------------------------------------- |
+| `Cargo.toml`          | ✅ Updated       | Dependencies modernized                                                                         |
+| `src/main.rs`         | ✅ Updated       | Async bootstrap, token cache handling, and UI/CLI dispatch now compile + run.                   |
+| `src/network.rs`      | 🔶 Partial       | Owns `Arc<Mutex<App>>`, unused imports removed, but Stream APIs + typed-ID dispatch need fixes. |
+| `src/redirect_uri.rs` | ✅ Updated       | Callback helper converted; unused `spotify` arg is the only warning.                            |
+| `src/config.rs`       | ⚠️ Unknown       | May need updates for new OAuth                                                                  |
+| `src/app.rs`          | ✅ Types updated | Model types renamed                                                                             |
 
 ### Handler Files
-| File                | Status          | Notes                        |
-| ------------------- | --------------- | ---------------------------- |
-| `src/handlers/*.rs` | ✅ Types updated | Model types renamed globally |
+| File                | Status          | Notes                                                              |
+| ------------------- | --------------- | ------------------------------------------------------------------ |
+| `src/handlers/*.rs` | ✅ Types updated | Model types renamed globally; typed-ID dispatch conversions needed |
 
 ### UI Files
-| File          | Status          | Notes                            |
-| ------------- | --------------- | -------------------------------- |
-| `src/ui/*.rs` | 🔶 Partial       | `ratatui` updates landed; still need typed-ID + `TimeDelta` conversions (`ResumePoint`, durations). |
+| File                       | Status     | Notes                                                                                            |
+| -------------------------- | ---------- | ------------------------------------------------------------------------------------------------ |
+| `src/ui/mod.rs`            | 🔶 Partial  | Base `ratatui` changes done, but draw helpers still use `Frame<B>` and `as_millis()` conversions. |
+| `src/ui/audio_analysis.rs` | ✅ Complete | `Frame<B>` → `Frame<'_>`, Backend import removed.                                                |
+| `src/ui/help.rs`           | ✅ Complete | No generic signatures, no changes needed.                                                        |
 
 ### CLI Files
-| File           | Status          | Notes                      |
-| -------------- | --------------- | -------------------------- |
-| `src/cli/*.rs` | ✅ Types updated | Needs testing with new API |
+| File                 | Status          | Notes                                     |
+| -------------------- | --------------- | ----------------------------------------- |
+| `src/cli/cli_app.rs` | ✅ Complete      | Lifetime `<'a>` stripped from struct/impl |
+| `src/cli/*.rs`       | ✅ Types updated | Needs testing with new API                |
 
 ---
 
 ## Next Steps
 
 ### Immediate Actions (to get it compiling)
-1. Convert playlist/track/episode IDs stored in `App`/UI state from `String` to rspotify’s typed IDs (or call `.to_string()` at render boundaries) so comparisons compile.
-2. Finish swapping queue/start-playback helpers over to typed IDs in `src/network.rs` and update the affected `IoEvent` variants.
-3. Fix the UI duration + `ResumePoint` fields to use `chrono::TimeDelta` (`.num_milliseconds()/.num_seconds()`) and the renamed `resume_position`.
+1. ❌ **Finish the UI migration**: convert every `Frame<B>` signature in `src/ui/mod.rs` to `Frame<'_>`, drop `where B: Backend`, and fix chrono duration/resume accessors.
+2. ❌ **Typed-ID dispatch conversions**: Convert all `app.dispatch(IoEvent::...)` calls in `src/app.rs` + `src/handlers/*.rs` to build owned IDs via `.into_static()` (wrap tracks/episodes in `PlayableId`).
+3. ❌ **Stream API fixes**: Replace `.await` on stream-returning rspotify calls (`playlist_items`, `artist_albums`, `current_user_playlists`, etc.) with proper `StreamExt::collect()` handling in `src/network.rs`.
 
 ### Short Term (to get it working)
-1. Re-test every `Network` API method once it compiles; replace remaining `String` URIs with typed IDs and add proper error propagation/logging.
+1. Re-test every `Network` API method once typed-ID dispatch & stream handling compile; ensure logging/error propagation is aligned with new APIs.
 2. Retest CLI commands now that they share the async client/runtime.
-3. Verify token refresh behavior in practice (currently relying on rspotify auto-refresh, `IoEvent::RefreshAuthentication` is effectively redundant).
-4. Fill in the new OAuth instructions in documentation/config templates (`client.yml`, README snippets).
+3. Verify token refresh behavior in practice (currently relying on rspotify auto-refresh); remove redundant `RefreshAuthentication` IoEvent if unnecessary.
+4. Update documentation/config templates (`client.yml`, README) with the new OAuth guidance.
 
 ### Long Term (for stability)
-1. Comprehensive manual testing with a Spotify account.
+1. Comprehensive manual testing with a Spotify account (TUI + CLI flows, audio analysis, device switching).
 2. Improve error handling and surface actionable messages to the TUI/CLI.
 3. Consider migrating further to rspotify 0.13+ once 0.12 is stable.
 4. Keep docs (`AGENTS.md`, `GEMINI.md`, `MIGRATION_NOTES.md`) updated as new fixes land.
