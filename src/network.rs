@@ -474,32 +474,53 @@ impl Network {
     }
   }
 
-  async fn get_current_user_saved_shows(&mut self, _offset: Option<u32>) {
-    // TODO: Fix this - the API method name has changed in rspotify 0.12
-    // Need to find the correct method name for fetching saved shows
-    self
-      .handle_error(anyhow!("Saved shows API not yet migrated to rspotify 0.12"))
-      .await;
+  async fn get_current_user_saved_shows(&mut self, offset: Option<u32>) {
+    match self
+      .spotify
+      .get_saved_show_manual(Some(self.large_search_limit), offset)
+      .await
+    {
+      Ok(saved_shows) => {
+        // not to show a blank page
+        if !saved_shows.items.is_empty() {
+          let mut app = self.app.lock().await;
+          app.library.saved_shows.add_pages(saved_shows);
+        }
+      }
+      Err(e) => {
+        self.handle_error(anyhow!(e)).await;
+      }
+    }
   }
 
-  async fn current_user_saved_shows_contains(&mut self, _show_ids: Vec<ShowId<'_>>) {
-    // TODO: Fix this - the API method name has changed in rspotify 0.12
-    // The method exists (used in toggle_save_track) but might have a different name here
-    self
-      .handle_error(anyhow!(
-        "Saved shows contains check not yet migrated to rspotify 0.12"
-      ))
-      .await;
+  async fn current_user_saved_shows_contains(&mut self, show_ids: Vec<ShowId<'_>>) {
+    match self.spotify.check_users_saved_shows(show_ids.clone()).await {
+      Ok(is_saved_vec) => {
+        let mut app = self.app.lock().await;
+        for (i, id) in show_ids.iter().enumerate() {
+          if let Some(is_saved) = is_saved_vec.get(i) {
+            if *is_saved {
+              app.saved_show_ids_set.insert(id.id().to_string());
+            } else {
+              // The show is not saved, so check if it should be removed
+              if app.saved_show_ids_set.contains(&id.id().to_string()) {
+                app.saved_show_ids_set.remove(&id.id().to_string());
+              }
+            }
+          };
+        }
+      }
+      Err(e) => {
+        self.handle_error(anyhow!(e)).await;
+      }
+    }
   }
 
   async fn get_show_episodes(&mut self, show: Box<SimplifiedShow>) {
-    let show_id = match show.id {
-      Some(id) => id,
-      None => return,
-    };
+    let show_id = show.id.clone();
     match self
       .spotify
-      .show_episodes(show_id, Some(self.large_search_limit), Some(0), None)
+      .get_shows_episodes_manual(show_id, None, Some(self.large_search_limit), Some(0))
       .await
     {
       Ok(episodes) => {
@@ -522,7 +543,7 @@ impl Network {
   }
 
   async fn get_show(&mut self, show_id: ShowId<'_>) {
-    match self.spotify.show(show_id, None).await {
+    match self.spotify.get_a_show(show_id, None).await {
       Ok(show) => {
         let selected_show = SelectedFullShow { show };
 
@@ -542,7 +563,7 @@ impl Network {
   async fn get_current_show_episodes(&mut self, show_id: ShowId<'_>, offset: Option<u32>) {
     match self
       .spotify
-      .show_episodes(show_id, Some(self.large_search_limit), offset, None)
+      .get_shows_episodes_manual(show_id, None, Some(self.large_search_limit), offset)
       .await
     {
       Ok(episodes) => {
@@ -1061,48 +1082,43 @@ impl Network {
       PlayableId::Episode(episode_id) => {
         // To save an episode, you save the show.
         // First, get the episode to find the show ID
-        match self.spotify.episode(episode_id, None).await {
+        match self.spotify.get_an_episode(episode_id, None).await {
           Ok(episode) => {
-            if let Some(show_id) = episode.show.id {
-              match self
-                .spotify
-                .current_user_saved_shows_contains([show_id.clone()])
-                .await
-              {
-                Ok(saved) => {
-                  if saved.first() == Some(&true) {
-                    match self
-                      .spotify
-                      .current_user_saved_shows_delete([show_id.clone()], None)
-                      .await
-                    {
-                      Ok(()) => {
-                        let mut app = self.app.lock().await;
-                        app.saved_show_ids_set.remove(&show_id.id().to_string());
-                      }
-                      Err(e) => {
-                        self.handle_error(anyhow!(e)).await;
-                      }
+            let show_id = episode.show.id;
+            match self
+              .spotify
+              .check_users_saved_shows([show_id.clone()])
+              .await
+            {
+              Ok(saved) => {
+                if saved.first() == Some(&true) {
+                  match self
+                    .spotify
+                    .remove_users_saved_shows([show_id.clone()], None)
+                    .await
+                  {
+                    Ok(()) => {
+                      let mut app = self.app.lock().await;
+                      app.saved_show_ids_set.remove(&show_id.id().to_string());
                     }
-                  } else {
-                    match self
-                      .spotify
-                      .current_user_saved_shows_add([show_id.clone()])
-                      .await
-                    {
-                      Ok(()) => {
-                        let mut app = self.app.lock().await;
-                        app.saved_show_ids_set.insert(show_id.id().to_string());
-                      }
-                      Err(e) => {
-                        self.handle_error(anyhow!(e)).await;
-                      }
+                    Err(e) => {
+                      self.handle_error(anyhow!(e)).await;
+                    }
+                  }
+                } else {
+                  match self.spotify.save_shows([show_id.clone()]).await {
+                    Ok(()) => {
+                      let mut app = self.app.lock().await;
+                      app.saved_show_ids_set.insert(show_id.id().to_string());
+                    }
+                    Err(e) => {
+                      self.handle_error(anyhow!(e)).await;
                     }
                   }
                 }
-                Err(e) => {
-                  self.handle_error(anyhow!(e)).await;
-                }
+              }
+              Err(e) => {
+                self.handle_error(anyhow!(e)).await;
               }
             }
           }
@@ -1228,7 +1244,7 @@ impl Network {
   async fn current_user_saved_shows_delete(&mut self, show_id: ShowId<'_>) {
     match self
       .spotify
-      .current_user_saved_shows_delete([show_id.clone()], None)
+      .remove_users_saved_shows([show_id.clone()], None)
       .await
     {
       Ok(_) => {
@@ -1243,11 +1259,7 @@ impl Network {
   }
 
   async fn current_user_saved_shows_add(&mut self, show_id: ShowId<'_>) {
-    match self
-      .spotify
-      .current_user_saved_shows_add([show_id.clone()])
-      .await
-    {
+    match self.spotify.save_shows([show_id.clone()]).await {
       Ok(_) => {
         self.get_current_user_saved_shows(None).await;
         let mut app = self.app.lock().await;
