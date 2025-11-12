@@ -126,6 +126,7 @@
 - ✅ `IoEvent` payloads and CLI dispatch now pass typed IDs end-to-end.
 - ✅ `get_current_playback` now dispatches `CurrentUserSavedTracksContains(vec![track_id.into_static()])`.
 - ✅ `set_tracks_to_table` converts every `FullTrack.id` into `TrackId<'static>` before dispatching `CurrentUserSavedTracksContains`.
+- ✅ `App` no longer stringifies IDs when following/unfollowing playlists, artists, or shows; clipboard helpers now bail gracefully if an ID is missing.
 - 🔶 Handler modules still emit string IDs when queueing IoEvents; `playlist.rs`, `recently_played.rs`, and the show add/remove helpers in `app.rs` now emit typed IDs, but `track_table.rs`, `album_tracks.rs`, `playbar.rs`, `artist.rs`, `search_results.rs`, `input.rs`, and `podcasts.rs` still need `.into_static()` conversions.
 
 #### Stream-returning rspotify APIs
@@ -186,9 +187,8 @@
 
 ## Known Issues & Blockers
 
-### Compilation Errors (Current)
-- **`CurrentPlaybackContext` drift**: `src/app.rs:452-607` still references `duration_ms`, `progress_ms`, and treats `device.volume_percent` as a plain integer. rspotify 0.12 now exposes `duration`/`progress` as `Option<Duration>` and `volume_percent` as `Option<u32>`, so all playback/seek helpers need to work with the new types.
-- **Track ID copy helpers**: `src/app.rs:699-715` still call `.unwrap_or_default()` on `TrackId`, which no longer implements `Default`. Convert to `track.id.as_ref().map(|id| id.id())` before formatting URLs.
+- **CLI util regressions**: `src/cli/util.rs:176-222` still references the old `.uri` fields on albums/artists/playlists/tracks/shows/episodes and passes `u32` durations into `display_track_progress`; update these helpers to use typed IDs/URIs from the new models and pass `std::time::Duration`.
+- **Input handling**: `src/event/key.rs:188-207` patterns don’t account for the new `KeyEventKind`/`KeyEventState` fields, so the `Key::Alt/Ctrl` match arms fail to compile until we add `..` (or capture the fields explicitly).
 
 ### Design Decisions Needed
 1. Do we store typed IDs (`TrackId`, `AlbumId`, …) inside `App`/UI state, or do we continue storing Strings and convert at the rspotify call sites?
@@ -207,7 +207,7 @@
 | `src/network.rs`      | 🔶 Partial       | Typed track IDs flow through `CurrentUserSavedTracksContains`; playlist fetchers use manual pagination; saved-show APIs fully migrated. Still need artist/podcast stream rewrites. |
 | `src/redirect_uri.rs` | ✅ Updated       | Callback helper converted; unused `spotify` arg is the only warning.                            |
 | `src/config.rs`       | ⚠️ Unknown       | May need updates for new OAuth                                                                  |
-| `src/app.rs`          | 🔶 Needs update | Still assumes `duration_ms`/`progress_ms` + string IDs; update for rspotify 0.12 models          |
+| `src/app.rs`          | ✅ Updated       | Playback helpers now use Duration/progress + typed IDs; clipboard and follow/unfollow flows modernized |
 
 ### Handler Files
 | File                | Status          | Notes                                                              |
@@ -232,9 +232,9 @@
 ## Next Steps
 
 ### Immediate Actions (to get it compiling)
-1. ❌ Update `src/app.rs` to the new rspotify playback models: replace every `duration_ms`/`progress_ms` access with the `Duration`-based fields, handle `device.volume_percent: Option<u32>`, and stop calling `.unwrap_or_default()` on typed IDs when building URLs.
-2. ❌ Finish the typed-ID conversions in the remaining handlers (`track_table.rs`, `album_tracks.rs`, `artist.rs`, `search_results.rs`, `input.rs`, `podcasts.rs`) so every IoEvent payload carries `TrackId<'static>`/`PlayableId`.
-3. ❌ Re-test search/podcast flows (CLI + UI) with the new pagination + `Market` arguments; update any lingering call sites that still expect the pre-0.12 `search` signature and drop the now-unused `futures` dependency once confirmed.
+1. ❌ Modernize `src/cli/util.rs`: swap the deprecated `.uri` fields for whichever combination of `external_urls`, typed IDs, or helper builders we keep; pass real `Duration` values into `display_track_progress`.
+2. ❌ Fix `src/event/key.rs` to match the new `KeyEvent` struct (capture or ignore `kind`/`state`) so Ctrl/Alt shortcuts compile again.
+3. ❌ Finish the typed-ID conversions in the remaining handlers (`track_table.rs`, `album_tracks.rs`, `artist.rs`, `search_results.rs`, `input.rs`, `podcasts.rs`) so every IoEvent payload carries `TrackId<'static>`/`PlayableId`.
 
 ### Short Term (to get it working)
 1. Re-test every `Network` API method once typed-ID dispatch & stream handling compile; ensure logging/error propagation is aligned with new APIs.
