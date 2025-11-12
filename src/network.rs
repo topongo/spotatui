@@ -1167,9 +1167,12 @@ impl Network {
   }
 
   async fn get_followed_artists(&mut self, after: Option<ArtistId<'_>>) {
+    // Convert after ID to string for the API call
+    let after_str = after.as_ref().map(|id| id.id());
+
     match self
       .spotify
-      .current_user_followed_artists(Some(self.large_search_limit), after)
+      .current_user_followed_artists(after_str, Some(self.large_search_limit))
       .await
     {
       Ok(saved_artists) => {
@@ -1184,20 +1187,20 @@ impl Network {
   }
 
   async fn user_artist_check_follow(&mut self, artist_ids: Vec<ArtistId<'_>>) {
-    if let Ok(are_followed) = self.spotify.is_following_artists(artist_ids).await {
+    if let Ok(are_followed) = self
+      .spotify
+      .user_artist_check_follow(artist_ids.clone())
+      .await
+    {
       let mut app = self.app.lock().await;
-      are_followed
+      artist_ids
         .iter()
-        .enumerate()
-        .for_each(|(i, &is_followed)| {
+        .zip(are_followed.iter())
+        .for_each(|(id, &is_followed)| {
           if is_followed {
-            if let Some(id) = self.spotify.get_id(IdType::Artist, i) {
-              app.followed_artist_ids_set.insert(id.to_string());
-            }
+            app.followed_artist_ids_set.insert(id.id().to_string());
           } else {
-            if let Some(id) = self.spotify.get_id(IdType::Artist, i) {
-              app.followed_artist_ids_set.remove(&id.to_string());
-            }
+            app.followed_artist_ids_set.remove(&id.id().to_string());
           }
         });
     }
@@ -1206,7 +1209,7 @@ impl Network {
   async fn get_current_user_saved_albums(&mut self, offset: Option<u32>) {
     match self
       .spotify
-      .current_user_saved_albums(Some(self.large_search_limit), offset)
+      .current_user_saved_albums_manual(None, Some(self.large_search_limit), offset)
       .await
     {
       Ok(saved_albums) => {
@@ -1225,22 +1228,18 @@ impl Network {
   async fn current_user_saved_albums_contains(&mut self, album_ids: Vec<AlbumId<'_>>) {
     if let Ok(are_followed) = self
       .spotify
-      .current_user_saved_albums_contains(album_ids)
+      .current_user_saved_albums_contains(album_ids.clone())
       .await
     {
       let mut app = self.app.lock().await;
-      are_followed
+      album_ids
         .iter()
-        .enumerate()
-        .for_each(|(i, &is_followed)| {
+        .zip(are_followed.iter())
+        .for_each(|(id, &is_followed)| {
           if is_followed {
-            if let Some(id) = self.spotify.get_id(IdType::Album, i) {
-              app.saved_album_ids_set.insert(id.to_string());
-            }
+            app.saved_album_ids_set.insert(id.id().to_string());
           } else {
-            if let Some(id) = self.spotify.get_id(IdType::Album, i) {
-              app.saved_album_ids_set.remove(&id.to_string());
-            }
+            app.saved_album_ids_set.remove(&id.id().to_string());
           }
         });
     }
