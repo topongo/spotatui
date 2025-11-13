@@ -14,6 +14,58 @@ pub fn handler(key: Key, app: &mut App) {
   match key {
     k if common_key_events::left_event(k) => common_key_events::handle_left_event(app),
     k if common_key_events::down_event(k) => {
+      let current_index = app.track_table.selected_index;
+      let tracks_len = app.track_table.tracks.len();
+
+      // Check if we're at the last track and there are more tracks to load
+      if current_index == tracks_len - 1 {
+        match &app.track_table.context {
+          Some(TrackTableContext::MyPlaylists) => {
+            if let (Some(playlists), Some(selected_playlist_index)) =
+              (&app.playlists, &app.selected_playlist_index)
+            {
+              if let Some(selected_playlist) = playlists.items.get(*selected_playlist_index) {
+                if let Some(playlist_tracks) = &app.playlist_tracks {
+                  // Check if there are more tracks to fetch
+                  if app.playlist_offset + app.large_search_limit < playlist_tracks.total {
+                    app.playlist_offset += app.large_search_limit;
+                    let playlist_id = playlist_id_static_from_ref(&selected_playlist.id);
+                    app.dispatch(IoEvent::GetPlaylistItems(playlist_id, app.playlist_offset));
+                    // Keep selection at the last track; it will move to first of new page when loaded
+                    app.track_table.selected_index = 0;
+                    return;
+                  }
+                }
+              }
+            }
+          }
+          Some(TrackTableContext::MadeForYou) => {
+            let (playlists, selected_playlist_index) =
+              (&app.library.made_for_you_playlists, &app.made_for_you_index);
+            if let Some(selected_playlist) = playlists
+              .get_results(Some(0))
+              .unwrap()
+              .items
+              .get(*selected_playlist_index)
+            {
+              if let Some(playlist_tracks) = &app.made_for_you_tracks {
+                if app.made_for_you_offset + app.large_search_limit < playlist_tracks.total {
+                  app.made_for_you_offset += app.large_search_limit;
+                  let playlist_id = playlist_id_static_from_ref(&selected_playlist.id);
+                  app.dispatch(IoEvent::GetMadeForYouPlaylistItems(
+                    playlist_id,
+                    app.made_for_you_offset,
+                  ));
+                  app.track_table.selected_index = 0;
+                  return;
+                }
+              }
+            }
+          }
+          _ => {}
+        }
+      }
+
       let next_index = common_key_events::on_down_press_handler(
         &app.track_table.tracks,
         Some(app.track_table.selected_index),
