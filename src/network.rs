@@ -990,6 +990,7 @@ impl Network {
       input_artist_name
     };
     let top_tracks = self.spotify.artist_top_tracks(artist_id.clone(), market);
+    #[allow(deprecated)]
     let related_artist = self.spotify.artist_related_artists(artist_id);
 
     if let Ok((albums, top_tracks, related_artist)) = try_join!(albums, top_tracks, related_artist)
@@ -1494,6 +1495,7 @@ impl Network {
     }
   }
 
+  #[allow(deprecated)]
   async fn get_audio_analysis(&mut self, track_id: TrackId<'_>) {
     match self.spotify.track_analysis(track_id).await {
       Ok(result) => {
@@ -1501,7 +1503,10 @@ impl Network {
         app.audio_analysis = Some(result);
       }
       Err(e) => {
-        self.handle_error(anyhow!(e)).await;
+        self.handle_error(anyhow!(
+          "Audio Analysis is no longer available. Spotify deprecated this endpoint in November 2024. \
+          This feature only works for apps created before that date. Error: {}", e
+        )).await;
       }
     }
   }

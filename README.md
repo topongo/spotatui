@@ -25,16 +25,17 @@ The terminal in the demo above is using the [Rigel theme](https://rigel.netlify.
     - [AUR](#aur)
     - [Nix](#nix)
     - [Void Linux](#void-linux)
-    - [Fedora/CentOS](#fedora-centos)
+    - [Fedora/CentOS](#fedoracentos)
     - [Cargo](#cargo)
       - [Note on Linux](#note-on-linux)
-    - [Windows](#windows-10)
+    - [Windows 10](#windows-10)
       - [Scoop installer](#scoop-installer)
     - [Manual](#manual)
   - [Connecting to Spotify’s API](#connecting-to-spotifys-api)
   - [Usage](#usage)
 - [Configuration](#configuration)
   - [Limitations](#limitations)
+    - [Deprecated Spotify API Features](#deprecated-spotify-api-features)
   - [Using with spotifyd](#using-with-spotifyd)
   - [Libraries used](#libraries-used)
   - [Development](#development)
@@ -294,6 +295,17 @@ keybindings:
 This app uses the [Web API](https://developer.spotify.com/documentation/web-api/) from Spotify, which doesn't handle streaming itself. So you'll need either an official Spotify client open or a lighter weight alternative such as [spotifyd](https://github.com/Spotifyd/spotifyd).
 
 If you want to play tracks, Spotify requires that you have a Premium account.
+
+### Deprecated Spotify API Features
+
+**Note:** As of November 2024, Spotify deprecated and removed access to certain API endpoints for new applications. The following features are included in this app but **will only work if your Spotify Developer application was created before November 27, 2024**:
+
+- **Audio Analysis Visualization** (press `v`): Real-time music visualization showing tempo, key, time signature, and animated pitch analysis synchronized to the currently playing track.
+- **Related Artists**: When viewing an artist page, the "Related Artists" section shows similar artists based on Spotify's recommendation algorithm.
+
+If you created your Spotify app after this date, these features will display an error message explaining they are unavailable. All other functionality works normally.
+
+For more information, see [Spotify's announcement about API changes](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api).
 
 ## Using with [spotifyd](https://github.com/Spotifyd/spotifyd)
 
