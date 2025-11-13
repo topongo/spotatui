@@ -30,7 +30,6 @@ use std::{
 use tokio::sync::Mutex;
 use tokio::try_join;
 
-#[derive(Debug)]
 pub enum IoEvent {
   GetCurrentPlayback,
   RefreshAuthentication,
