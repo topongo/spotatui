@@ -5,6 +5,7 @@ use super::{
 use crate::app::ActiveBlock;
 use crate::event::Key;
 use crate::network::IoEvent;
+use rspotify::{model::PlayableId, prelude::*};
 
 pub fn handler(key: Key, app: &mut App) {
   match key {
@@ -66,14 +67,14 @@ fn jump_to_end(app: &mut App) {
 
 fn on_enter(app: &mut App) {
   if let Some(episodes) = app.library.show_episodes.get_results(None) {
-    let episode_uris = episodes
+    let episode_ids: Vec<PlayableId<'static>> = episodes
       .items
       .iter()
-      .map(|episode| episode.uri.to_owned())
-      .collect::<Vec<String>>();
+      .map(|episode| PlayableId::Episode(episode.id.clone().into_static()))
+      .collect();
     app.dispatch(IoEvent::StartPlayback(
       None,
-      Some(episode_uris),
+      Some(episode_ids),
       Some(app.episode_list_index),
     ));
   }
@@ -87,13 +88,13 @@ fn handle_next_event(app: &mut App) {
   match app.episode_table_context {
     EpisodeTableContext::Full => {
       if let Some(selected_episode) = app.selected_show_full.clone() {
-        let show_id = selected_episode.show.id;
+        let show_id = selected_episode.show.id.id().to_string();
         app.get_episode_table_next(show_id)
       }
     }
     EpisodeTableContext::Simplified => {
       if let Some(selected_episode) = app.selected_show_simplified.clone() {
-        let show_id = selected_episode.show.id;
+        let show_id = selected_episode.show.id.id().to_string();
         app.get_episode_table_next(show_id)
       }
     }
