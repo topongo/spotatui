@@ -25,7 +25,9 @@ mod track_table;
 use super::app::{ActiveBlock, App, ArtistBlock, RouteId, SearchResultBlock};
 use crate::event::Key;
 use crate::network::IoEvent;
+use rspotify::model::idtypes::PlaylistId;
 use rspotify::model::{context::CurrentPlaybackContext, PlayableItem};
+use rspotify::prelude::Id;
 
 pub use input::handler as input_handler;
 
@@ -202,7 +204,9 @@ fn handle_jump_to_context(app: &mut App) {
         rspotify::model::enums::Type::Album => handle_jump_to_album(app),
         rspotify::model::enums::Type::Artist => handle_jump_to_artist_album(app),
         rspotify::model::enums::Type::Playlist => {
-          app.dispatch(IoEvent::GetPlaylistItems(play_context.uri, 0))
+          if let Ok(playlist_id) = PlaylistId::from_uri(&play_context.uri) {
+            app.dispatch(IoEvent::GetPlaylistItems(playlist_id.into_static(), 0));
+          }
         }
         _ => {}
       }
@@ -236,7 +240,7 @@ fn handle_jump_to_artist_album(app: &mut App) {
       PlayableItem::Track(track) => {
         if let Some(artist) = track.artists.first() {
           if let Some(artist_id) = artist.id.clone() {
-            app.get_artist(artist_id, artist.name.clone());
+            app.get_artist(artist_id.id().to_string(), artist.name.clone());
             app.push_navigation_stack(RouteId::Artist, ActiveBlock::ArtistBlock);
           }
         }

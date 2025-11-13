@@ -4,11 +4,11 @@ use super::{
 };
 use crate::event::Key;
 use crate::network::IoEvent;
+use rand::{thread_rng, Rng};
 use rspotify::model::{
   idtypes::{PlayContextId, PlaylistId, TrackId},
   PlayableId,
 };
-use rand::{thread_rng, Rng};
 
 pub fn handler(key: Key, app: &mut App) {
   match key {
@@ -489,16 +489,8 @@ fn playlist_id_static_from_ref(id: &PlaylistId<'_>) -> PlaylistId<'static> {
   id.clone().into_static()
 }
 
-fn playlist_id_static(id: &Option<PlaylistId<'_>>) -> Option<PlaylistId<'static>> {
-  id.clone().map(|playlist_id| playlist_id.into_static())
-}
-
 fn playlist_context_id_from_ref(id: &PlaylistId<'_>) -> PlayContextId<'static> {
   PlayContextId::Playlist(id.clone().into_static())
-}
-
-fn playlist_context_id(id: &Option<PlaylistId<'_>>) -> Option<PlayContextId<'static>> {
-  playlist_id_static(id).map(PlayContextId::Playlist)
 }
 
 fn track_playable_id(id: Option<TrackId<'_>>) -> Option<PlayableId<'static>> {

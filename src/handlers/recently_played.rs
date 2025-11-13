@@ -1,6 +1,7 @@
 use super::{super::app::App, common_key_events};
 use crate::{app::RecommendationsContext, event::Key, network::IoEvent};
-use rspotify::model::idtypes::{PlayableId, TrackId};
+use rspotify::model::idtypes::PlayableId;
+use rspotify::prelude::Id;
 
 pub fn handler(key: Key, app: &mut App) {
   match key {
@@ -58,7 +59,11 @@ pub fn handler(key: Key, app: &mut App) {
           .items
           .iter()
           .filter_map(|item| {
-            item.track.id.as_ref().map(|track_id| PlayableId::Track(track_id.clone().into_static()))
+            item
+              .track
+              .id
+              .as_ref()
+              .map(|track_id| PlayableId::Track(track_id.clone().into_static()))
           })
           .collect();
 
