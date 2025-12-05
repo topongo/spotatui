@@ -550,11 +550,8 @@ impl App {
       Some(seek_ms) => seek_ms,
       None => self.song_progress_ms,
     };
-    let new_progress = if old_progress as u32 > self.user_config.behavior.seek_milliseconds {
-      old_progress as u32 - self.user_config.behavior.seek_milliseconds
-    } else {
-      0u32
-    };
+    let new_progress =
+      (old_progress as u32).saturating_sub(self.user_config.behavior.seek_milliseconds);
     self.seek_ms = Some(new_progress as u128);
   }
 
@@ -1232,7 +1229,7 @@ impl App {
   }
 
   pub fn get_user_country(&self) -> Option<Country> {
-    self.user.as_ref().and_then(|user| user.country.clone())
+    self.user.as_ref().and_then(|user| user.country)
   }
 
   pub fn calculate_help_menu_offset(&mut self) {

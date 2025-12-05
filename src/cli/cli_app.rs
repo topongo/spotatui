@@ -295,7 +295,7 @@ impl CliApp {
 
   pub async fn seek(&mut self, seconds_str: String) -> Result<()> {
     let seconds = match seconds_str.parse::<i32>() {
-      Ok(s) => s.abs() as u32,
+      Ok(s) => s.unsigned_abs(),
       Err(_) => return Err(anyhow!("failed to convert seconds to i32")),
     };
 
@@ -331,11 +331,7 @@ impl CliApp {
       // Jump to the beginning if the position_to_seek would be
       // negative, must be checked before the calculation to avoid
       // an 'underflow'
-      if ms > current_pos {
-        0u32
-      } else {
-        current_pos - ms
-      }
+      current_pos.saturating_sub(ms)
     } else {
       // Absolute value of the track
       seconds * 1000
@@ -487,7 +483,7 @@ impl CliApp {
     let offset = if random {
       // Only works with playlists for now
       if uri.contains("spotify:playlist:") {
-        let id_str = uri.split(':').last().unwrap();
+        let id_str = uri.split(':').next_back().unwrap();
         if let Ok(playlist_id) = rspotify::model::idtypes::PlaylistId::from_id(id_str) {
           match self.net.spotify.playlist(playlist_id, None, None).await {
             Ok(p) => {
@@ -515,7 +511,7 @@ impl CliApp {
     };
 
     if uri.contains("spotify:track:") {
-      let id_str = uri.split(':').last().unwrap();
+      let id_str = uri.split(':').next_back().unwrap();
       if let Ok(track_id) = rspotify::model::idtypes::TrackId::from_id(id_str) {
         let playable_id = PlayableId::Track(track_id.into_static());
         if queue {
