@@ -217,6 +217,85 @@ of the app. Beware that this comes at a CPU cost!",
   }
   user_config.load_config()?;
 
+  // Prompt for global song count opt-in if missing (only for interactive TUI, not CLI)
+  if matches.subcommand_name().is_none() {
+    let config_paths_check = match &user_config.path_to_config {
+      Some(path) => path,
+      None => {
+        user_config.get_or_build_paths()?;
+        user_config.path_to_config.as_ref().unwrap()
+      }
+    };
+
+    let should_prompt = if config_paths_check.config_file_path.exists() {
+      let config_string = fs::read_to_string(&config_paths_check.config_file_path)?;
+      // Prompt if file is empty OR doesn't mention the setting
+      config_string.trim().is_empty() || !config_string.contains("enable_global_song_count")
+    } else {
+      // For existing users (have client.yml but no config.yml), prompt them
+      let client_yml_path = config_paths_check
+        .config_file_path
+        .parent()
+        .map(|p| p.join("client.yml"));
+      client_yml_path.map_or(false, |p| p.exists())
+    };
+
+    if should_prompt {
+      println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      println!("📊 Global Song Counter");
+      println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      println!("\nSpotatui can contribute to a global counter showing total");
+      println!("songs played by all users worldwide.");
+      println!("\n🔒 Privacy: This feature is completely anonymous.");
+      println!("   • No personal information is collected");
+      println!("   • No song names, artists, or listening history");
+      println!("   • Only a simple increment when a new song starts");
+      println!("\nWould you like to participate? (Y/n): ");
+
+      let mut input = String::new();
+      io::stdin().read_line(&mut input)?;
+      let input = input.trim().to_lowercase();
+
+      let enable = input.is_empty() || input == "y" || input == "yes";
+      user_config.behavior.enable_global_song_count = enable;
+
+      // Save the choice to config
+      let config_yml = if config_paths_check.config_file_path.exists() {
+        fs::read_to_string(&config_paths_check.config_file_path).unwrap_or_default()
+      } else {
+        String::new()
+      };
+
+      let mut config: serde_yaml::Value = if config_yml.trim().is_empty() {
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+      } else {
+        serde_yaml::from_str(&config_yml)?
+      };
+
+      if let serde_yaml::Value::Mapping(ref mut map) = config {
+        let behavior = map
+          .entry(serde_yaml::Value::String("behavior".to_string()))
+          .or_insert(serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+
+        if let serde_yaml::Value::Mapping(ref mut behavior_map) = behavior {
+          behavior_map.insert(
+            serde_yaml::Value::String("enable_global_song_count".to_string()),
+            serde_yaml::Value::Bool(enable),
+          );
+        }
+      }
+
+      let updated_config = serde_yaml::to_string(&config)?;
+      fs::write(&config_paths_check.config_file_path, updated_config)?;
+
+      if enable {
+        println!("✓ Thank you for participating!\n");
+      } else {
+        println!("✓ Opted out. You can change this anytime in ~/.config/spotatui/config.yml\n");
+      }
+    }
+  }
+
   if let Some(tick_rate) = matches
     .get_one::<String>("tick-rate")
     .and_then(|tick_rate| tick_rate.parse().ok())
