@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.28.0] - 2025-12-06
+
+### Added
+
+- **Global Song Counter**: Anonymous telemetry feature tracking total songs played by all users worldwide
+  - Completely anonymous - no personal information, song names, or listening history collected
+  - Opt-in by default with clear privacy notice and easy opt-out via config
+  - Real-time counter displayed in README badge
+  - Powered by Cloudflare Workers for free, globally-distributed edge computing
+  - Rate-limited to prevent abuse (60-second cooldown per IP)
+  - Can be disabled by setting `enable_global_song_count: false` in config.yml
+  - Startup prompt for existing users to opt-in or opt-out
+
+### Changed
+
+- Added `reqwest` dependency with `rustls-tls` for telemetry HTTP requests
+- Added `telemetry` feature flag (enabled by default)
+- Updated README with privacy notice and global counter badge
+
 ## [0.27.15] - 2025-12-05
 
 ### Changed
