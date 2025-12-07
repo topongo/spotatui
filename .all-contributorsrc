@@ -6,6 +6,20 @@
   "commit": false,
   "contributors": [
     {
+      "login": "LargeModGames",
+      "name": "LargeModGames",
+      "avatar_url": "https://avatars.githubusercontent.com/u/84450916?v=4",
+      "profile": "https://github.com/LargeModGames",
+      "contributions": [
+        "code",
+        "doc",
+        "test",
+        "ideas",
+        "infra",
+        "maintenance"
+      ]
+    },
+    {
       "login": "Rigellute",
       "name": "Alexander Keliris",
       "avatar_url": "https://avatars2.githubusercontent.com/u/12150276?v=4",
@@ -17,7 +31,6 @@
         "blog",
         "ideas",
         "infra",
-        "maintenance",
         "platform",
         "review"
       ]
@@ -875,5 +888,6 @@
   "projectOwner": "Rigellute",
   "repoType": "github",
   "repoHost": "https://github.com",
-  "skipCi": true
+  "skipCi": true,
+  "commitConvention": "angular"
 }
