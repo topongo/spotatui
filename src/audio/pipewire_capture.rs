@@ -84,10 +84,9 @@ fn run_pipewire_capture(
   analyzer: SharedAnalyzer,
   active: Arc<AtomicBool>,
 ) -> Result<(), pw::Error> {
-  pw::init();
-
-  let mainloop = pw::main_loop::MainLoop::new(None)?;
-  let context = pw::context::Context::new(&mainloop)?;
+  // pipewire 0.9+ no longer has a separate init() call - initialization happens in MainLoopBox::new()
+  let mainloop = pw::main_loop::MainLoopBox::new(None)?;
+  let context = pw::context::ContextBox::new(mainloop.loop_(), None)?;
   let core = context.connect(None)?;
 
   // Properties for audio capture from sink monitors
@@ -99,7 +98,7 @@ fn run_pipewire_capture(
     *pw::keys::STREAM_CAPTURE_SINK => "true",
   };
 
-  let stream = pw::stream::Stream::new(&core, "spotatui-audio-viz", props)?;
+  let stream = pw::stream::StreamBox::new(&core, "spotatui-audio-viz", props)?;
 
   let active_clone = active.clone();
   let analyzer_clone = analyzer.clone();
