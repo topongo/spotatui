@@ -7,6 +7,8 @@ mod config;
 mod event;
 mod handlers;
 mod network;
+#[cfg(feature = "streaming")]
+mod player;
 mod redirect_uri;
 mod ui;
 mod user_config;
@@ -52,7 +54,7 @@ use std::{
 use tokio::sync::Mutex;
 use user_config::{UserConfig, UserConfigPaths};
 
-const SCOPES: [&str; 14] = [
+const SCOPES: [&str; 15] = [
   "playlist-read-collaborative",
   "playlist-read-private",
   "playlist-modify-private",
@@ -67,6 +69,7 @@ const SCOPES: [&str; 14] = [
   "user-read-playback-position",
   "user-read-private",
   "user-read-recently-played",
+  "streaming", // Required for native playback
 ];
 
 // Manual token cache helpers since rspotify's built-in caching isn't working
@@ -428,9 +431,62 @@ of the app. Beware that this comes at a CPU cost!",
     );
   // Launch the UI (async)
   } else {
+    // Initialize streaming player if enabled
+    #[cfg(feature = "streaming")]
+    let streaming_player = if client_config.enable_streaming {
+      let streaming_config = player::StreamingConfig {
+        device_name: client_config.streaming_device_name.clone(),
+        bitrate: client_config.streaming_bitrate,
+        audio_cache: client_config.streaming_audio_cache,
+        cache_path: player::get_default_cache_path(),
+        initial_volume: 100, // Default to full volume
+      };
+
+      let redirect_uri = client_config.get_redirect_uri();
+
+      match player::StreamingPlayer::new(&client_config.client_id, &redirect_uri, streaming_config)
+        .await
+      {
+        Ok(p) => {
+          println!("Streaming player initialized as '{}'", p.device_name());
+          // Auto-activate Spotatui as the playback device so users don't need to manually select it
+          p.activate();
+          println!("Activated '{}' as playback device", p.device_name());
+          Some(Arc::new(p))
+        }
+        Err(e) => {
+          println!("Failed to initialize streaming: {}", e);
+          println!("Falling back to API-based playback control");
+          None
+        }
+      }
+    } else {
+      None
+    };
+
+    #[cfg(feature = "streaming")]
+    if streaming_player.is_some() {
+      println!("Native playback enabled - 'Spotatui' is now your active playback device");
+    }
+
+    // Clone streaming device name for use in network spawn (only if streaming is enabled)
+    #[cfg(feature = "streaming")]
+    let streaming_device_name = streaming_player
+      .as_ref()
+      .map(|p| p.device_name().to_string());
+
     let cloned_app = Arc::clone(&app);
     tokio::spawn(async move {
       let mut network = Network::new(spotify, client_config, &app);
+
+      // Auto-select the streaming device as active playback device
+      #[cfg(feature = "streaming")]
+      if let Some(device_name) = streaming_device_name {
+        network
+          .handle_network_event(IoEvent::AutoSelectStreamingDevice(device_name))
+          .await;
+      }
+
       start_tokio(sync_io_rx, &mut network).await;
     });
     // The UI must run in the "main" thread
