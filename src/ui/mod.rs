@@ -1372,8 +1372,10 @@ pub fn draw_device_list(f: &mut Frame<'_>, app: &App) {
     .highlight_style(
       Style::default()
         .fg(app.user_config.theme.active)
+        .bg(app.user_config.theme.inactive)
         .add_modifier(Modifier::BOLD),
-    );
+    )
+    .highlight_symbol(">> ");
   f.render_stateful_widget(list, chunks[1], &mut state);
 }
 
