@@ -22,11 +22,6 @@ jobs:
             artifact_prefix: linux-x86_64 # most Linux distros
             binary_postfix: ""
             audio_features: "audio-viz"
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            artifact_prefix: linux-alpine-x86_64 # Alpine / musl
-            binary_postfix: ""
-            audio_features: ""  # No audio-viz for musl (pkg-config cross-compilation not supported)
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact_prefix: macos-x86_64
@@ -52,10 +47,6 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install musl-tools (Linux musl)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -68,10 +59,6 @@ jobs:
 
       - name: Build release binary
         run: |
-          # For musl cross-compilation, allow pkg-config to work
-          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
-            export PKG_CONFIG_ALLOW_CROSS=1
-          fi
           if [ -z "${{ matrix.audio_features }}" ]; then
             cargo build --release --target ${{ matrix.target }} --no-default-features --features telemetry,streaming
           else
@@ -120,9 +107,45 @@ jobs:
             ${{ env.BINARY_NAME }}-${{ matrix.artifact_prefix }}.zip
             ${{ env.BINARY_NAME }}-${{ matrix.artifact_prefix }}.zip.sha256
 
+  build-musl:
+    name: Build x86_64-unknown-linux-musl
+    runs-on: ubuntu-latest
+    container:
+      image: rust:alpine
+    
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install Alpine dependencies
+        run: |
+          apk add --no-cache musl-dev pkgconf openssl-dev openssl-libs-static alsa-lib-dev
+
+      - name: Build release binary
+        run: |
+          cargo build --release --no-default-features --features telemetry,streaming
+        env:
+          OPENSSL_STATIC: "1"
+
+      - name: Package binary
+        run: |
+          cd target/release
+          strip spotatui || true
+          tar czvf ../../spotatui-linux-alpine-x86_64.tar.gz spotatui
+          cd ../..
+          sha256sum spotatui-linux-alpine-x86_64.tar.gz > spotatui-linux-alpine-x86_64.tar.gz.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotatui-linux-alpine-x86_64
+          path: |
+            spotatui-linux-alpine-x86_64.tar.gz
+            spotatui-linux-alpine-x86_64.tar.gz.sha256
+
   release:
     name: Create GitHub Release
-    needs: build
+    needs: [build, build-musl]
     runs-on: ubuntu-latest
     permissions:
       contents: write
