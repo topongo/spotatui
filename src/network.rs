@@ -363,6 +363,25 @@ impl Network {
   }
 
   async fn get_current_playback(&mut self) {
+    // When using native streaming, the Spotify API returns stale server-side state
+    // that doesn't reflect recent local changes (volume, shuffle, repeat, play/pause).
+    // We need to preserve these local states and restore them after getting the API response.
+    #[cfg(feature = "streaming")]
+    let local_state: Option<(Option<u8>, bool, rspotify::model::RepeatState, bool)> =
+      if self.is_native_streaming_active() {
+        let app = self.app.lock().await;
+        if let Some(ref ctx) = app.current_playback_context {
+          let volume = self.streaming_player.as_ref().map(|p| p.get_volume());
+          Some((volume, ctx.shuffle_state, ctx.repeat_state, ctx.is_playing))
+        } else {
+          // No existing context, just get volume from streaming player
+          let volume = self.streaming_player.as_ref().map(|p| p.get_volume());
+          Some((volume, false, rspotify::model::RepeatState::Off, false))
+        }
+      } else {
+        None
+      };
+
     let context = self
       .spotify
       .current_playback(
@@ -374,7 +393,7 @@ impl Network {
     let mut app = self.app.lock().await;
 
     match context {
-      Ok(Some(c)) => {
+      Ok(Some(mut c)) => {
         app.instant_since_last_current_playback_poll = Instant::now();
 
         // Process track info before storing context (avoids cloning)
@@ -408,6 +427,17 @@ impl Network {
             PlayableItem::Episode(_episode) => { /*should map this to following the podcast show*/ }
           }
         };
+
+        // Preserve local streaming states (API returns stale server-side state)
+        #[cfg(feature = "streaming")]
+        if let Some((volume, shuffle, repeat, is_playing)) = local_state {
+          if let Some(vol) = volume {
+            c.device.volume_percent = Some(vol.into());
+          }
+          c.shuffle_state = shuffle;
+          c.repeat_state = repeat;
+          c.is_playing = is_playing;
+        }
 
         app.current_playback_context = Some(c);
       }
@@ -1002,9 +1032,29 @@ impl Network {
   }
 
   async fn shuffle(&mut self, shuffle_state: bool) {
+    let new_shuffle_state = !shuffle_state;
+
+    // When using native streaming, update UI immediately for instant feedback
+    #[cfg(feature = "streaming")]
+    if self.is_native_streaming_active() {
+      {
+        let mut app = self.app.lock().await;
+        if let Some(ctx) = &mut app.current_playback_context {
+          ctx.shuffle_state = new_shuffle_state;
+        }
+      }
+      // Still send to API to sync server state (fire and forget - don't wait)
+      let _ = self
+        .spotify
+        .shuffle(new_shuffle_state, self.client_config.device_id.as_deref())
+        .await;
+      return;
+    }
+
+    // Fallback: API-based shuffle (updates UI after API call succeeds)
     match self
       .spotify
-      .shuffle(!shuffle_state, self.client_config.device_id.as_deref())
+      .shuffle(new_shuffle_state, self.client_config.device_id.as_deref())
       .await
     {
       Ok(()) => {
@@ -1012,7 +1062,7 @@ impl Network {
         // due to polling playback context)
         let mut app = self.app.lock().await;
         if let Some(current_playback_context) = &mut app.current_playback_context {
-          current_playback_context.shuffle_state = !shuffle_state;
+          current_playback_context.shuffle_state = new_shuffle_state;
         };
       }
       Err(e) => {
@@ -1027,6 +1077,25 @@ impl Network {
       RepeatState::Context => RepeatState::Track,
       RepeatState::Track => RepeatState::Off,
     };
+
+    // When using native streaming, update UI immediately for instant feedback
+    #[cfg(feature = "streaming")]
+    if self.is_native_streaming_active() {
+      {
+        let mut app = self.app.lock().await;
+        if let Some(ctx) = &mut app.current_playback_context {
+          ctx.repeat_state = next_repeat_state;
+        }
+      }
+      // Still send to API to sync server state (fire and forget - don't wait)
+      let _ = self
+        .spotify
+        .repeat(next_repeat_state, self.client_config.device_id.as_deref())
+        .await;
+      return;
+    }
+
+    // Fallback: API-based repeat (updates UI after API call succeeds)
     match self
       .spotify
       .repeat(next_repeat_state, self.client_config.device_id.as_deref())

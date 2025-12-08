@@ -606,10 +606,24 @@ async fn handle_player_events(
         app.dispatch(IoEvent::GetCurrentPlayback);
       }
       PlayerEvent::Stopped { .. } | PlayerEvent::EndOfTrack { .. } => {
+        // When a track ends naturally, pre-fetch the next track's info immediately
+        // This reduces the visible lag in the playbar compared to waiting for the Playing event
+        {
+          let mut app = app.lock().await;
+          if let Some(ref mut ctx) = app.current_playback_context {
+            ctx.is_playing = false;
+          }
+          app.song_progress_ms = 0;
+          // Clear the last track ID so the next Playing event will trigger a full refresh
+          app.last_track_id = None;
+        } // Lock released
+
+        // Small delay to let Spotify's backend transition to the next track
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Dispatch outside the lock to fetch next track info
         let mut app = app.lock().await;
-        if let Some(ref mut ctx) = app.current_playback_context {
-          ctx.is_playing = false;
-        }
+        app.dispatch(IoEvent::GetCurrentPlayback);
       }
       PlayerEvent::VolumeChanged { volume } => {
         let mut app = app.lock().await;

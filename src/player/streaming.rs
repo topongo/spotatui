@@ -293,6 +293,12 @@ impl StreamingPlayer {
     self.mixer.set_volume(volume_u16);
   }
 
+  /// Get the current volume (0-100)
+  pub fn get_volume(&self) -> u8 {
+    let volume_u16 = self.mixer.volume();
+    ((volume_u16 as f64 / 65535.0) * 100.0).round() as u8
+  }
+
   /// Get the current player state
   pub async fn get_state(&self) -> PlayerState {
     self.state.lock().await.clone()
