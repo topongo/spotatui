@@ -184,12 +184,18 @@ jobs:
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
           echo "SHA256: $SHA256"
 
-      - name: Checkout AUR repository
-        uses: actions/checkout@v4
-        with:
-          repository: LargeModGames/spotatui
-          ssh-key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          path: aur
+      - name: Setup SSH for AUR
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          git config --global user.name "${{ secrets.AUR_USERNAME }}"
+          git config --global user.email "${{ secrets.AUR_EMAIL }}"
+
+      - name: Clone AUR repository
+        run: |
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes' git clone ssh://aur@aur.archlinux.org/spotatui.git aur
 
       - name: Update PKGBUILD
         working-directory: aur
@@ -202,14 +208,11 @@ jobs:
         working-directory: aur
         run: |
           # Install makepkg dependencies
-          sudo pacman -Syu --noconfirm --needed base-devel
-          makepkg --printsrcinfo > .SRCINFO
+          docker run --rm -v $PWD:/pkg archlinux:latest /bin/bash -c "pacman -Syu --noconfirm --needed base-devel && cd /pkg && makepkg --printsrcinfo > .SRCINFO"
 
       - name: Commit and push to AUR
         working-directory: aur
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
           git add PKGBUILD .SRCINFO
           git commit -m "Update to ${{ steps.version.outputs.version }}"
-          git push
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes' git push
