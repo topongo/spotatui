@@ -251,14 +251,14 @@ of the app. Beware that this comes at a CPU cost!",
 
     if should_prompt {
       println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      println!("📊 Global Song Counter");
+      println!("Global Song Counter");
       println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       println!("\nspotatui can contribute to a global counter showing total");
       println!("songs played by all users worldwide.");
-      println!("\n🔒 Privacy: This feature is completely anonymous.");
-      println!("   • No personal information is collected");
-      println!("   • No song names, artists, or listening history");
-      println!("   • Only a simple increment when a new song starts");
+      println!("\nPrivacy: This feature is completely anonymous.");
+      println!("• No personal information is collected");
+      println!("• No song names, artists, or listening history");
+      println!("• Only a simple increment when a new song starts");
       println!("\nWould you like to participate? (Y/n): ");
 
       let mut input = String::new();
@@ -298,9 +298,9 @@ of the app. Beware that this comes at a CPU cost!",
       fs::write(&config_paths_check.config_file_path, updated_config)?;
 
       if enable {
-        println!("✓ Thank you for participating!\n");
+        println!("Thank you for participating!\n");
       } else {
-        println!("✓ Opted out. You can change this anytime in ~/.config/spotatui/config.yml\n");
+        println!("Opted out. You can change this anytime in ~/.config/spotatui/config.yml\n");
       }
     }
   }
