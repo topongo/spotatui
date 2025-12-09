@@ -169,6 +169,8 @@ When a new version of spotatui is available, you'll see a popup notification on 
 
 This will download and install the latest version automatically.
 
+> **Note for AUR users:** While you can update through your AUR helper (e.g., `yay -S spotatui`), it's not recommended as it will rebuild everything from source, which takes significantly longer than using `spotatui update --install`.
+
 ## Connecting to Spotify's API
 
 `spotatui` needs to connect to Spotify’s API in order to find music by
