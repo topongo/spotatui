@@ -418,6 +418,7 @@ pub struct BehaviorConfigString {
   pub show_loading_indicator: Option<bool>,
   pub enforce_wide_search_bar: Option<bool>,
   pub enable_global_song_count: Option<bool>,
+  pub shuffle_enabled: Option<bool>,
   pub liked_icon: Option<String>,
   pub shuffle_icon: Option<String>,
   pub repeat_track_icon: Option<String>,
@@ -437,6 +438,7 @@ pub struct BehaviorConfig {
   pub show_loading_indicator: bool,
   pub enforce_wide_search_bar: bool,
   pub enable_global_song_count: bool,
+  pub shuffle_enabled: bool,
   pub liked_icon: String,
   pub shuffle_icon: String,
   pub repeat_track_icon: String,
@@ -502,6 +504,7 @@ impl UserConfig {
         show_loading_indicator: true,
         enforce_wide_search_bar: false,
         enable_global_song_count: true,
+        shuffle_enabled: false,
         liked_icon: "♥".to_string(),
         shuffle_icon: "🔀".to_string(),
         repeat_track_icon: "🔂".to_string(),
@@ -679,6 +682,10 @@ impl UserConfig {
       self.behavior.enable_global_song_count = enable_global_song_count;
     }
 
+    if let Some(shuffle_enabled) = behavior_config.shuffle_enabled {
+      self.behavior.shuffle_enabled = shuffle_enabled;
+    }
+
     Ok(())
   }
 
@@ -733,6 +740,7 @@ impl UserConfig {
       show_loading_indicator: Some(self.behavior.show_loading_indicator),
       enforce_wide_search_bar: Some(self.behavior.enforce_wide_search_bar),
       enable_global_song_count: Some(self.behavior.enable_global_song_count),
+      shuffle_enabled: Some(self.behavior.shuffle_enabled),
       liked_icon: Some(self.behavior.liked_icon.clone()),
       shuffle_icon: Some(self.behavior.shuffle_icon.clone()),
       repeat_track_icon: Some(self.behavior.repeat_track_icon.clone()),

@@ -1011,7 +1011,7 @@ impl App {
 
   pub fn shuffle(&mut self) {
     if let Some(context) = &self.current_playback_context.clone() {
-      self.dispatch(IoEvent::Shuffle(context.shuffle_state));
+      self.dispatch(IoEvent::Shuffle(!context.shuffle_state));
     };
   }
 

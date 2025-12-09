@@ -54,7 +54,7 @@ pub enum IoEvent {
   Seek(u32),
   NextTrack,
   PreviousTrack,
-  Shuffle(bool),
+  Shuffle(bool), // desired shuffle state
   Repeat(RepeatState),
   PausePlayback,
   ChangeVolume(u8),
@@ -374,9 +374,10 @@ impl Network {
           let volume = self.streaming_player.as_ref().map(|p| p.get_volume());
           Some((volume, ctx.shuffle_state, ctx.repeat_state, ctx.is_playing))
         } else {
-          // No existing context, just get volume from streaming player
+          // No existing context yet; seed from persisted settings + current player volume
           let volume = self.streaming_player.as_ref().map(|p| p.get_volume());
-          Some((volume, false, rspotify::model::RepeatState::Off, false))
+          let shuffle = app.user_config.behavior.shuffle_enabled;
+          Some((volume, shuffle, rspotify::model::RepeatState::Off, false))
         }
       } else {
         None
@@ -1064,8 +1065,8 @@ impl Network {
     };
   }
 
-  async fn shuffle(&mut self, shuffle_state: bool) {
-    let new_shuffle_state = !shuffle_state;
+  async fn shuffle(&mut self, desired_shuffle_state: bool) {
+    let new_shuffle_state = desired_shuffle_state;
 
     // When using native streaming, update UI immediately for instant feedback
     #[cfg(feature = "streaming")]
@@ -1075,6 +1076,8 @@ impl Network {
         if let Some(ctx) = &mut app.current_playback_context {
           ctx.shuffle_state = new_shuffle_state;
         }
+        app.user_config.behavior.shuffle_enabled = new_shuffle_state;
+        let _ = app.user_config.save_config();
       }
       // Still send to API to sync server state (fire and forget - don't wait)
       let _ = self
@@ -1097,6 +1100,8 @@ impl Network {
         if let Some(current_playback_context) = &mut app.current_playback_context {
           current_playback_context.shuffle_state = new_shuffle_state;
         };
+        app.user_config.behavior.shuffle_enabled = new_shuffle_state;
+        let _ = app.user_config.save_config();
       }
       Err(e) => {
         self.handle_error(anyhow!(e)).await;

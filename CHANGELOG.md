@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.33.6] - 2025-12-10
+
+### Added
+
+- **Persistent Volume**: Volume changes are saved immediately to `config.yml` and restored on startup so your level sticks between sessions
+- **Persistent Shuffle**: Shuffle state is now saved and reapplied on launch, including when using native streaming, so you restart right where you left off
+- (thanks u/Ratox for the ideas)
+
 ## [0.33.5] - 2025-12-09
 
 ### Fixed

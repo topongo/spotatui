@@ -224,6 +224,7 @@ of the app. Beware that this comes at a CPU cost!",
     user_config.path_to_config.replace(path);
   }
   user_config.load_config()?;
+  let initial_shuffle_enabled = user_config.behavior.shuffle_enabled;
 
   // Prompt for global song count opt-in if missing (only for interactive TUI, not CLI)
   if matches.subcommand_name().is_none() {
@@ -520,6 +521,11 @@ of the app. Beware that this comes at a CPU cost!",
           .await;
       }
 
+      // Apply saved shuffle preference on startup
+      network
+        .handle_network_event(IoEvent::Shuffle(initial_shuffle_enabled))
+        .await;
+
       start_tokio(sync_io_rx, &mut network).await;
     });
     // The UI must run in the "main" thread
@@ -673,6 +679,9 @@ async fn handle_player_events(
           if let Some(ref mut ctx) = app.current_playback_context {
             ctx.device.volume_percent = Some(volume_percent);
           }
+          // Persist the latest volume so it is restored on next launch
+          app.user_config.behavior.volume_percent = volume_percent.min(100) as u8;
+          let _ = app.user_config.save_config();
         }
       }
       PlayerEvent::PositionChanged {

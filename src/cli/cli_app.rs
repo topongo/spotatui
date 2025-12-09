@@ -396,7 +396,7 @@ impl CliApp {
       Flag::Shuffle => {
         self
           .net
-          .handle_network_event(IoEvent::Shuffle(c.shuffle_state))
+          .handle_network_event(IoEvent::Shuffle(!c.shuffle_state))
           .await
       }
       Flag::Repeat => {
