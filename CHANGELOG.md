@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.33.9] - 2025-12-10
+## [0.34.0] - 2025-12-10
 
 ### Added
 
@@ -11,6 +11,30 @@
   - Track metadata exposed (title, artist, album, duration)
   - Playback status and volume synced to D-Bus
   - Requires native streaming feature (enabled by default on Linux)
+
+- **Multi-Page Playback Support**: Enhanced playback functionality for large playlists and saved tracks
+  - Play seamlessly across all loaded pages, not just the current page
+  - Automatically calculates correct track offset across multiple pages
+  - Supports both saved tracks (Liked Songs) and playlists
+
+- **Background Prefetching**: Intelligent prefetching system for improved performance
+  - Automatically loads additional tracks in the background when viewing playlists or saved tracks
+  - Prefetches up to 500 tracks (~10 pages) for seamless playback
+  - Non-blocking implementation - prefetching runs in separate async tasks
+  - Prefetched tracks are immediately available for playback without delay
+
+### Fixed
+
+- **First Song Playback Delay**: Fixed 5-10 second delay when playing the first song after startup
+  - Root cause: Prefetch operations were blocking the network thread, preventing playback events from being processed
+  - Fix: Converted prefetch operations to spawn as independent async tasks using `tokio::spawn()`
+  - Result: Playback starts instantly while prefetching happens in the background
+
+- **Track Skip Metadata Sync**: Implemented retry mechanism for track skip operations
+  - Ensures Spotify API returns updated track metadata after skipping
+  - Prevents showing stale track information in the UI
+  - Improves reliability of track transitions
+
 
 ## [0.33.8] - 2025-12-09
 
