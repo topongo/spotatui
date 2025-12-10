@@ -337,10 +337,23 @@ impl Network {
         self.start_collection_playback(offset).await;
       }
       IoEvent::PreFetchAllSavedTracks => {
-        self.prefetch_all_saved_tracks().await;
+        // Spawn prefetch as a separate task to avoid blocking playback
+        let spotify = self.spotify.clone();
+        let app = self.app.clone();
+        let large_search_limit = self.large_search_limit;
+        tokio::spawn(async move {
+          Self::prefetch_all_saved_tracks_task(spotify, app, large_search_limit).await;
+        });
       }
       IoEvent::PreFetchAllPlaylistTracks(playlist_id) => {
-        self.prefetch_all_playlist_tracks(playlist_id).await;
+        // Spawn prefetch as a separate task to avoid blocking playback
+        let spotify = self.spotify.clone();
+        let app = self.app.clone();
+        let large_search_limit = self.large_search_limit;
+        tokio::spawn(async move {
+          Self::prefetch_all_playlist_tracks_task(spotify, app, large_search_limit, playlist_id)
+            .await;
+        });
       }
     };
 
@@ -1133,10 +1146,15 @@ impl Network {
 
   /// Pre-fetch all saved tracks pages in background for seamless playback
   /// This loads all remaining pages that haven't been loaded yet
-  async fn prefetch_all_saved_tracks(&mut self) {
+  /// Runs as a separate async task to avoid blocking other operations
+  async fn prefetch_all_saved_tracks_task(
+    spotify: AuthCodeSpotify,
+    app: Arc<Mutex<App>>,
+    large_search_limit: u32,
+  ) {
     // Get current state
     let (current_total, pages_loaded) = {
-      let app = self.app.lock().await;
+      let app = app.lock().await;
       if let Some(saved_tracks) = app.library.saved_tracks.get_results(Some(0)) {
         (
           saved_tracks.total,
@@ -1148,20 +1166,19 @@ impl Network {
     };
 
     // Calculate how many tracks we already have
-    let tracks_loaded = pages_loaded * self.large_search_limit;
+    let tracks_loaded = pages_loaded * large_search_limit;
 
     // Fetch remaining pages (limit to reasonable amount to avoid memory issues)
     let max_tracks_to_prefetch = 500; // ~10 pages
     let mut offset = tracks_loaded;
 
     while offset < current_total && offset < tracks_loaded + max_tracks_to_prefetch {
-      match self
-        .spotify
-        .current_user_saved_tracks_manual(None, Some(self.large_search_limit), Some(offset))
+      match spotify
+        .current_user_saved_tracks_manual(None, Some(large_search_limit), Some(offset))
         .await
       {
         Ok(saved_tracks) => {
-          let mut app = self.app.lock().await;
+          let mut app = app.lock().await;
           // Add liked song IDs to the set
           saved_tracks.items.iter().for_each(|item| {
             if let Some(track_id) = &item.track.id {
@@ -1171,20 +1188,26 @@ impl Network {
           // Add page to the saved tracks
           app.library.saved_tracks.pages.push(saved_tracks);
         }
-        Err(e) => {
-          self.handle_error(anyhow!(e)).await;
+        Err(_e) => {
+          // Silently fail in background task - don't show errors to user
           break;
         }
       }
-      offset += self.large_search_limit;
+      offset += large_search_limit;
     }
   }
 
   /// Pre-fetch all tracks from a playlist in background
-  async fn prefetch_all_playlist_tracks(&mut self, playlist_id: PlaylistId<'static>) {
+  /// Runs as a separate async task to avoid blocking other operations
+  async fn prefetch_all_playlist_tracks_task(
+    spotify: AuthCodeSpotify,
+    app: Arc<Mutex<App>>,
+    large_search_limit: u32,
+    playlist_id: PlaylistId<'static>,
+  ) {
     // Get current playlist state
     let current_total = {
-      let app = self.app.lock().await;
+      let app = app.lock().await;
       if let Some(playlist_tracks) = &app.playlist_tracks {
         playlist_tracks.total
       } else {
@@ -1194,41 +1217,40 @@ impl Network {
 
     // Get current offset
     let current_offset = {
-      let app = self.app.lock().await;
+      let app = app.lock().await;
       app.playlist_offset
     };
 
     // Fetch remaining pages (limit to avoid memory issues)
     let max_tracks_to_prefetch = 500; // ~10 pages
-    let mut offset = current_offset + self.large_search_limit;
+    let mut offset = current_offset + large_search_limit;
 
     while offset < current_total && offset < current_offset + max_tracks_to_prefetch {
-      match self
-        .spotify
+      match spotify
         .playlist_items_manual(
           playlist_id.clone(),
           None,
           None,
-          Some(self.large_search_limit),
+          Some(large_search_limit),
           Some(offset),
         )
         .await
       {
         Ok(playlist_page) => {
           // Store the fetched tracks
-          let mut app = self.app.lock().await;
+          let mut app = app.lock().await;
           // Extend playlist tracks items
           if let Some(ref mut existing) = app.playlist_tracks {
             existing.items.extend(playlist_page.items);
             existing.total = playlist_page.total; // Update total in case it changed
           }
         }
-        Err(e) => {
-          self.handle_error(anyhow!(e)).await;
+        Err(_e) => {
+          // Silently fail in background task - don't show errors to user
           break;
         }
       }
-      offset += self.large_search_limit;
+      offset += large_search_limit;
     }
   }
 
