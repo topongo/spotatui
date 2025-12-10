@@ -98,6 +98,16 @@ pub enum IoEvent {
   AddItemToQueue(PlayableId<'static>),
   IncrementGlobalSongCount,
   GetLyrics(String, String, f64),
+  /// Start playback from the user's saved tracks collection (Liked Songs)
+  /// Takes the absolute position in the collection to start from
+  /// NOTE: Currently unused - Spotify Web API doesn't support collection context URI
+  /// Keeping for potential future use if Spotify adds support
+  #[allow(dead_code)]
+  StartCollectionPlayback(usize),
+  /// Pre-fetch all saved tracks pages in background for seamless playback
+  PreFetchAllSavedTracks,
+  /// Pre-fetch all tracks from a playlist in background
+  PreFetchAllPlaylistTracks(PlaylistId<'static>),
 }
 
 pub struct Network {
@@ -322,6 +332,28 @@ impl Network {
       }
       IoEvent::GetLyrics(track, artist, duration) => {
         self.get_lyrics(track, artist, duration).await;
+      }
+      IoEvent::StartCollectionPlayback(offset) => {
+        self.start_collection_playback(offset).await;
+      }
+      IoEvent::PreFetchAllSavedTracks => {
+        // Spawn prefetch as a separate task to avoid blocking playback
+        let spotify = self.spotify.clone();
+        let app = self.app.clone();
+        let large_search_limit = self.large_search_limit;
+        tokio::spawn(async move {
+          Self::prefetch_all_saved_tracks_task(spotify, app, large_search_limit).await;
+        });
+      }
+      IoEvent::PreFetchAllPlaylistTracks(playlist_id) => {
+        // Spawn prefetch as a separate task to avoid blocking playback
+        let spotify = self.spotify.clone();
+        let app = self.app.clone();
+        let large_search_limit = self.large_search_limit;
+        tokio::spawn(async move {
+          Self::prefetch_all_playlist_tracks_task(spotify, app, large_search_limit, playlist_id)
+            .await;
+        });
       }
     };
 
@@ -1006,6 +1038,222 @@ impl Network {
     }
   }
 
+  /// Start playback from the user's saved tracks collection (Liked Songs)
+  /// Uses a direct HTTP call since rspotify doesn't support the collection context URI
+  async fn start_collection_playback(&mut self, offset: usize) {
+    // Get user ID to construct collection context URI
+    let user_id = {
+      let app = self.app.lock().await;
+      app.user.as_ref().map(|u| u.id.to_string())
+    };
+
+    let user_id = match user_id {
+      Some(id) => id,
+      None => {
+        self.handle_error(anyhow!("User not logged in")).await;
+        return;
+      }
+    };
+
+    // Get access token from rspotify client
+    let token = {
+      let token_lock = self
+        .spotify
+        .token
+        .lock()
+        .await
+        .expect("Failed to lock token");
+      token_lock.as_ref().map(|t| t.access_token.clone())
+    };
+
+    let access_token = match token {
+      Some(t) => t,
+      None => {
+        self
+          .handle_error(anyhow!("No access token available"))
+          .await;
+        return;
+      }
+    };
+
+    // Construct the collection context URI: spotify:user:{user_id}:collection
+    let context_uri = format!("spotify:user:{}:collection", user_id);
+
+    // Build the request body
+    let mut body = serde_json::json!({
+      "context_uri": context_uri,
+      "offset": { "position": offset }
+    });
+
+    // Add device_id if configured
+    if let Some(ref device_id) = self.client_config.device_id {
+      body["device_id"] = serde_json::json!(device_id);
+    }
+
+    // Make the API request using reqwest
+    let client = reqwest::Client::new();
+    let url = match self.client_config.device_id.as_ref() {
+      Some(device_id) => format!(
+        "https://api.spotify.com/v1/me/player/play?device_id={}",
+        device_id
+      ),
+      None => "https://api.spotify.com/v1/me/player/play".to_string(),
+    };
+
+    let result = client
+      .put(&url)
+      .header("Authorization", format!("Bearer {}", access_token))
+      .header("Content-Type", "application/json")
+      .json(&body)
+      .send()
+      .await;
+
+    match result {
+      Ok(response) => {
+        if response.status().is_success() {
+          // Reset progress and update playing state immediately
+          {
+            let mut app = self.app.lock().await;
+            app.song_progress_ms = 0;
+            if let Some(ctx) = &mut app.current_playback_context {
+              ctx.is_playing = true;
+            }
+          }
+
+          // Wait for Spotify's API to sync before fetching updated state
+          tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+          self.get_current_playback().await;
+        } else {
+          let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+          self
+            .handle_error(anyhow!(
+              "Failed to start collection playback: {}",
+              error_text
+            ))
+            .await;
+        }
+      }
+      Err(e) => {
+        self
+          .handle_error(anyhow!("HTTP request failed: {}", e))
+          .await;
+      }
+    }
+  }
+
+  /// Pre-fetch all saved tracks pages in background for seamless playback
+  /// This loads all remaining pages that haven't been loaded yet
+  /// Runs as a separate async task to avoid blocking other operations
+  async fn prefetch_all_saved_tracks_task(
+    spotify: AuthCodeSpotify,
+    app: Arc<Mutex<App>>,
+    large_search_limit: u32,
+  ) {
+    // Get current state
+    let (current_total, pages_loaded) = {
+      let app = app.lock().await;
+      if let Some(saved_tracks) = app.library.saved_tracks.get_results(Some(0)) {
+        (
+          saved_tracks.total,
+          app.library.saved_tracks.pages.len() as u32,
+        )
+      } else {
+        return; // No saved tracks loaded yet
+      }
+    };
+
+    // Calculate how many tracks we already have
+    let tracks_loaded = pages_loaded * large_search_limit;
+
+    // Fetch remaining pages (limit to reasonable amount to avoid memory issues)
+    let max_tracks_to_prefetch = 500; // ~10 pages
+    let mut offset = tracks_loaded;
+
+    while offset < current_total && offset < tracks_loaded + max_tracks_to_prefetch {
+      match spotify
+        .current_user_saved_tracks_manual(None, Some(large_search_limit), Some(offset))
+        .await
+      {
+        Ok(saved_tracks) => {
+          let mut app = app.lock().await;
+          // Add liked song IDs to the set
+          saved_tracks.items.iter().for_each(|item| {
+            if let Some(track_id) = &item.track.id {
+              app.liked_song_ids_set.insert(track_id.to_string());
+            }
+          });
+          // Add page to the saved tracks
+          app.library.saved_tracks.pages.push(saved_tracks);
+        }
+        Err(_e) => {
+          // Silently fail in background task - don't show errors to user
+          break;
+        }
+      }
+      offset += large_search_limit;
+    }
+  }
+
+  /// Pre-fetch all tracks from a playlist in background
+  /// Runs as a separate async task to avoid blocking other operations
+  async fn prefetch_all_playlist_tracks_task(
+    spotify: AuthCodeSpotify,
+    app: Arc<Mutex<App>>,
+    large_search_limit: u32,
+    playlist_id: PlaylistId<'static>,
+  ) {
+    // Get current playlist state
+    let current_total = {
+      let app = app.lock().await;
+      if let Some(playlist_tracks) = &app.playlist_tracks {
+        playlist_tracks.total
+      } else {
+        return;
+      }
+    };
+
+    // Get current offset
+    let current_offset = {
+      let app = app.lock().await;
+      app.playlist_offset
+    };
+
+    // Fetch remaining pages (limit to avoid memory issues)
+    let max_tracks_to_prefetch = 500; // ~10 pages
+    let mut offset = current_offset + large_search_limit;
+
+    while offset < current_total && offset < current_offset + max_tracks_to_prefetch {
+      match spotify
+        .playlist_items_manual(
+          playlist_id.clone(),
+          None,
+          None,
+          Some(large_search_limit),
+          Some(offset),
+        )
+        .await
+      {
+        Ok(playlist_page) => {
+          // Store the fetched tracks
+          let mut app = app.lock().await;
+          // Extend playlist tracks items
+          if let Some(ref mut existing) = app.playlist_tracks {
+            existing.items.extend(playlist_page.items);
+            existing.total = playlist_page.total; // Update total in case it changed
+          }
+        }
+        Err(_e) => {
+          // Silently fail in background task - don't show errors to user
+          break;
+        }
+      }
+      offset += large_search_limit;
+    }
+  }
+
   async fn seek(&mut self, position_ms: u32) {
     // Use native streaming player for instant seek (no network delay)
     #[cfg(feature = "streaming")]
@@ -1050,6 +1298,14 @@ impl Network {
       }
     }
 
+    // Store the current track ID before skipping
+    let old_track_id = {
+      let mut app = self.app.lock().await;
+      // Reset progress immediately for instant UI feedback
+      app.song_progress_ms = 0;
+      app.last_track_id.clone()
+    };
+
     // Fallback to API-based skip
     match self
       .spotify
@@ -1057,8 +1313,21 @@ impl Network {
       .await
     {
       Ok(()) => {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        self.get_current_playback().await;
+        // Retry mechanism: Poll multiple times until we get updated metadata
+        // Spotify's API can be slow to update after a skip command
+        for attempt in 0..5 {
+          let delay = if attempt == 0 { 100 } else { 200 * attempt }; // 100ms, 200ms, 400ms, 600ms, 800ms
+          tokio::time::sleep(Duration::from_millis(delay as u64)).await;
+          self.get_current_playback().await;
+
+          // Check if we got the new track - if so, stop retrying
+          let app = self.app.lock().await;
+          let current_track_id = app.last_track_id.clone();
+          if current_track_id != old_track_id {
+            // Successfully got new track metadata
+            break;
+          }
+        }
       }
       Err(e) => {
         self.handle_error(anyhow!(e)).await;
@@ -1080,6 +1349,14 @@ impl Network {
       }
     }
 
+    // Store the current track ID before skipping
+    let old_track_id = {
+      let mut app = self.app.lock().await;
+      // Reset progress immediately for instant UI feedback
+      app.song_progress_ms = 0;
+      app.last_track_id.clone()
+    };
+
     // Fallback to API-based skip
     match self
       .spotify
@@ -1087,8 +1364,21 @@ impl Network {
       .await
     {
       Ok(()) => {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        self.get_current_playback().await;
+        // Retry mechanism: Poll multiple times until we get updated metadata
+        // Spotify's API can be slow to update after a skip command
+        for attempt in 0..5 {
+          let delay = if attempt == 0 { 100 } else { 200 * attempt }; // 100ms, 200ms, 400ms, 600ms, 800ms
+          tokio::time::sleep(Duration::from_millis(delay as u64)).await;
+          self.get_current_playback().await;
+
+          // Check if we got the new track - if so, stop retrying
+          let app = self.app.lock().await;
+          let current_track_id = app.last_track_id.clone();
+          if current_track_id != old_track_id {
+            // Successfully got new track metadata
+            break;
+          }
+        }
       }
       Err(e) => {
         self.handle_error(anyhow!(e)).await;
