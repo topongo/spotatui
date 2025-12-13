@@ -546,6 +546,10 @@ of the app. Beware that this comes at a CPU cost!",
     #[cfg(feature = "mpris")]
     let mpris_for_events = mpris_manager.clone();
 
+    // Clone MPRIS manager for UI loop (to update status on device changes)
+    #[cfg(feature = "mpris")]
+    let mpris_for_ui = mpris_manager.clone();
+
     // Spawn player event listener (updates app state from native player events)
     #[cfg(feature = "streaming")]
     if let Some(ref player) = streaming_player {
@@ -602,10 +606,18 @@ of the app. Beware that this comes at a CPU cost!",
       start_tokio(sync_io_rx, &mut network).await;
     });
     // The UI must run in the "main" thread
-    #[cfg(feature = "streaming")]
-    start_ui(user_config, &cloned_app, Some(shared_position_for_ui)).await?;
+    #[cfg(all(feature = "streaming", feature = "mpris"))]
+    start_ui(
+      user_config,
+      &cloned_app,
+      Some(shared_position_for_ui),
+      mpris_for_ui,
+    )
+    .await?;
+    #[cfg(all(feature = "streaming", not(feature = "mpris")))]
+    start_ui(user_config, &cloned_app, Some(shared_position_for_ui), None).await?;
     #[cfg(not(feature = "streaming"))]
-    start_ui(user_config, &cloned_app, None).await?;
+    start_ui(user_config, &cloned_app, None, None).await?;
   }
 
   Ok(())
@@ -1051,10 +1063,12 @@ async fn handle_mpris_events(
   }
 }
 
+#[cfg(feature = "mpris")]
 async fn start_ui(
   user_config: UserConfig,
   app: &Arc<Mutex<App>>,
   shared_position: Option<Arc<AtomicU64>>,
+  mpris_manager: Option<Arc<mpris::MprisManager>>,
 ) -> Result<()> {
   // Terminal initialization
   let mut stdout = stdout();
@@ -1075,6 +1089,11 @@ async fn start_ui(
   // Audio capture is initialized lazily - only when entering visualization view
   #[cfg(any(feature = "audio-viz", feature = "audio-viz-cpal"))]
   let mut audio_capture: Option<audio::AudioCaptureManager> = None;
+
+  // Track previous streaming state to detect device changes for MPRIS
+  // When switching from native streaming to external device (like spotifyd),
+  // we set MPRIS to stopped so the external player's MPRIS takes precedence
+  let mut prev_is_streaming_active = false;
 
   // Check for updates SYNCHRONOUSLY before starting the event loop
   // This ensures the update prompt appears before any user interaction
@@ -1097,6 +1116,22 @@ async fn start_ui(
 
   loop {
     let mut app = app.lock().await;
+
+    // MPRIS device change detection: When switching from native streaming to
+    // an external device (like spotifyd), set MPRIS to stopped so the external
+    // player's MPRIS interface takes precedence in desktop widgets
+    #[cfg(feature = "mpris")]
+    {
+      let current_is_streaming_active = app.is_streaming_active;
+      if prev_is_streaming_active && !current_is_streaming_active {
+        // Switched away from native streaming to external device
+        if let Some(ref mpris) = mpris_manager {
+          mpris.set_stopped();
+        }
+      }
+      prev_is_streaming_active = current_is_streaming_active;
+    }
+
     // Get the size of the screen on each loop to account for resize event
     if let Ok(size) = terminal.backend().size() {
       // Reset the help menu is the terminal was resized
@@ -1269,6 +1304,167 @@ async fn start_ui(
       }
       app.help_docs_size = ui::help::get_help_docs(&app.user_config.keys).len() as u32;
 
+      is_first_render = false;
+    }
+  }
+
+  terminal.show_cursor()?;
+  close_application()?;
+
+  Ok(())
+}
+
+/// Non-MPRIS version of start_ui - used when mpris feature is disabled
+#[cfg(not(feature = "mpris"))]
+async fn start_ui(
+  user_config: UserConfig,
+  app: &Arc<Mutex<App>>,
+  shared_position: Option<Arc<AtomicU64>>,
+  _mpris_manager: Option<()>,
+) -> Result<()> {
+  // Terminal initialization
+  let mut stdout = stdout();
+  execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+  enable_raw_mode()?;
+
+  let mut backend = CrosstermBackend::new(stdout);
+
+  if user_config.behavior.set_window_title {
+    backend.execute(SetTitle("spt - spotatui"))?;
+  }
+
+  let mut terminal = Terminal::new(backend)?;
+  terminal.hide_cursor()?;
+
+  let events = event::Events::new(user_config.behavior.tick_rate_milliseconds);
+
+  // Audio capture is initialized lazily - only when entering visualization view
+  #[cfg(any(feature = "audio-viz", feature = "audio-viz-cpal"))]
+  let mut audio_capture: Option<audio::AudioCaptureManager> = None;
+
+  // Check for updates SYNCHRONOUSLY before starting the event loop
+  {
+    let update_info = tokio::task::spawn_blocking(cli::check_for_update_silent)
+      .await
+      .ok()
+      .flatten();
+    if let Some(info) = update_info {
+      let mut app = app.lock().await;
+      app.update_available = Some(info);
+      app.push_navigation_stack(RouteId::UpdatePrompt, ActiveBlock::UpdatePrompt);
+    }
+  }
+
+  let mut is_first_render = true;
+
+  loop {
+    let mut app = app.lock().await;
+
+    if let Ok(size) = terminal.backend().size() {
+      if is_first_render || app.size != size {
+        app.help_menu_max_lines = 0;
+        app.help_menu_offset = 0;
+        app.help_menu_page = 0;
+        app.size = size;
+
+        let potential_limit = max((app.size.height as i32) - 13, 0) as u32;
+        let max_limit = min(potential_limit, 50);
+        let large_search_limit = min((f32::from(size.height) / 1.4) as u32, max_limit);
+        let small_search_limit = min((f32::from(size.height) / 2.85) as u32, max_limit / 2);
+
+        app.dispatch(IoEvent::UpdateSearchLimits(
+          large_search_limit,
+          small_search_limit,
+        ));
+
+        if app.size.height > 8 {
+          app.help_menu_max_lines = (app.size.height as u32) - 8;
+        } else {
+          app.help_menu_max_lines = 0;
+        }
+      }
+    };
+
+    let current_route = app.get_current_route();
+    terminal.draw(|f| match current_route.active_block {
+      ActiveBlock::HelpMenu => ui::draw_help_menu(f, &app),
+      ActiveBlock::Error => ui::draw_error_screen(f, &app),
+      ActiveBlock::SelectDevice => ui::draw_device_list(f, &app),
+      ActiveBlock::Analysis => ui::audio_analysis::draw(f, &app),
+      ActiveBlock::BasicView => ui::draw_basic_view(f, &app),
+      ActiveBlock::UpdatePrompt => ui::draw_update_prompt(f, &app),
+      ActiveBlock::Settings => ui::settings::draw_settings(f, &app),
+      _ => ui::draw_main_layout(f, &app),
+    })?;
+
+    if current_route.active_block == ActiveBlock::Input {
+      terminal.show_cursor()?;
+    } else {
+      terminal.hide_cursor()?;
+    }
+
+    let cursor_offset = if app.size.height > ui::util::SMALL_TERMINAL_HEIGHT {
+      2
+    } else {
+      1
+    };
+    terminal.backend_mut().execute(MoveTo(
+      cursor_offset + app.input_cursor_position,
+      cursor_offset,
+    ))?;
+
+    if SystemTime::now() > app.spotify_token_expiry {
+      app.dispatch(IoEvent::RefreshAuthentication);
+    }
+
+    match events.next()? {
+      event::Event::Input(key) => {
+        if key == Key::Ctrl('c') {
+          app.close_io_channel();
+          break;
+        }
+
+        let current_active_block = app.get_current_route().active_block;
+
+        if current_active_block == ActiveBlock::Input {
+          handlers::input_handler(key, &mut app);
+        } else if key == app.user_config.keys.back {
+          if app.get_current_route().active_block != ActiveBlock::Input {
+            let pop_result = match app.pop_navigation_stack() {
+              Some(ref x) if x.id == RouteId::Search => app.pop_navigation_stack(),
+              Some(x) => Some(x),
+              None => None,
+            };
+            if pop_result.is_none() {
+              app.close_io_channel();
+              break;
+            }
+          }
+        } else {
+          handlers::handle_app(key, &mut app);
+        }
+      }
+      event::Event::Tick => {
+        app.update_on_tick();
+
+        #[cfg(feature = "streaming")]
+        if let Some(ref pos) = shared_position {
+          let pos_ms = pos.load(Ordering::Relaxed) as u128;
+          if pos_ms > 0 && app.is_streaming_active {
+            app.song_progress_ms = pos_ms;
+          }
+        }
+      }
+    }
+
+    if is_first_render {
+      app.dispatch(IoEvent::GetPlaylists);
+      app.dispatch(IoEvent::GetUser);
+      app.dispatch(IoEvent::GetCurrentPlayback);
+      if app.user_config.behavior.enable_global_song_count {
+        app.dispatch(IoEvent::FetchGlobalSongCount);
+      }
+      app.help_docs_size = ui::help::get_help_docs(&app.user_config.keys).len() as u32;
       is_first_render = false;
     }
   }
