@@ -210,6 +210,11 @@ sudo dnf install openssl-devel alsa-lib-devel pkg-config
     cargo run --release
     ```
 
+    **Nix:**
+    ```bash
+    nix-build
+    ```
+
 ### Updating
 
 When a new version of spotatui is available, you'll see a popup notification on startup. To update:
