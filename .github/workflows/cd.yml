@@ -138,6 +138,8 @@ jobs:
             - On **macOS with Apple Silicon (M1/M2/M3)** → `spotatui-macos-aarch64.tar.gz`
 
             Checksums (`.sha256`) are optional and only needed if you want to verify the download.
+
+            To update use "spotatui update --install" or use your package manager of choice.
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -61,7 +61,6 @@ We respect your privacy. This is purely a fun community metric with zero trackin
     - [How It Works](#how-it-works)
     - [Notes](#notes)
     - [MPRIS D-Bus Integration (Linux)](#mpris-d-bus-integration-linux)
-    - [macOS Now Playing Integration](#macos-now-playing-integration)
 - [Configuration](#configuration)
   - [In-App Settings](#in-app-settings)
     - [Settings Categories](#settings-categories)
@@ -226,7 +225,7 @@ When a new version of spotatui is available, you'll see a popup notification on 
    ```
 
 This will download and install the latest version automatically.
-
+If you install spotatui through your package manager, it is suggested to update through there instead of the command above.
 
 ## Connecting to Spotify's API
 
