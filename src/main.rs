@@ -164,15 +164,16 @@ fn install_panic_hook() {
       if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
       }
-      if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+      if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+      {
         let _ = writeln!(f, "\n==== spotatui panic ====");
         let _ = writeln!(f, "{}", info);
         let _ = writeln!(f, "{:?}", Backtrace::new());
       }
-      eprintln!(
-        "A crash log was written to: {}",
-        path.to_string_lossy()
-      );
+      eprintln!("A crash log was written to: {}", path.to_string_lossy());
     }
     default_hook(info);
 

@@ -225,7 +225,8 @@ impl StreamingPlayer {
       session.clone(),
       mixer.get_soft_volume(),
       move || {
-        let result = std::panic::catch_unwind(|| backend(requested_device.clone(), AudioFormat::default()));
+        let result =
+          std::panic::catch_unwind(|| backend(requested_device.clone(), AudioFormat::default()));
         match result {
           Ok(sink) => sink,
           Err(_) => {
