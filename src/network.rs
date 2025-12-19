@@ -203,7 +203,7 @@ impl Network {
       .map(|p| p.device_name().to_lowercase());
     {
       let app = self.app.lock().await;
-      if let (Some(ref ctx), Some(ref native_name)) =
+      if let (Some(ref ctx), Some(native_name)) =
         (&app.current_playback_context, native_device_name.as_ref())
       {
         let current_device_name = ctx.device.name.to_lowercase();
@@ -2726,9 +2726,9 @@ impl Network {
     use rspotify::model::TimeRange;
 
     let spotify_time_range = match time_range {
-      DiscoverTimeRange::ShortTerm => TimeRange::ShortTerm,
-      DiscoverTimeRange::MediumTerm => TimeRange::MediumTerm,
-      DiscoverTimeRange::LongTerm => TimeRange::LongTerm,
+      DiscoverTimeRange::Short => TimeRange::ShortTerm,
+      DiscoverTimeRange::Medium => TimeRange::MediumTerm,
+      DiscoverTimeRange::Long => TimeRange::LongTerm,
     };
 
     {

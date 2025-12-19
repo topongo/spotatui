@@ -200,36 +200,36 @@ pub enum EpisodeTableContext {
 #[derive(Clone, PartialEq, Debug, Copy, Default)]
 pub enum DiscoverTimeRange {
   /// Last 4 weeks
-  ShortTerm,
+  Short,
   /// Last 6 months (default)
   #[default]
-  MediumTerm,
+  Medium,
   /// All time
-  LongTerm,
+  Long,
 }
 
 impl DiscoverTimeRange {
   pub fn label(&self) -> &'static str {
     match self {
-      DiscoverTimeRange::ShortTerm => "4 weeks",
-      DiscoverTimeRange::MediumTerm => "6 months",
-      DiscoverTimeRange::LongTerm => "All time",
+      DiscoverTimeRange::Short => "4 weeks",
+      DiscoverTimeRange::Medium => "6 months",
+      DiscoverTimeRange::Long => "All time",
     }
   }
 
   pub fn next(&self) -> Self {
     match self {
-      DiscoverTimeRange::ShortTerm => DiscoverTimeRange::MediumTerm,
-      DiscoverTimeRange::MediumTerm => DiscoverTimeRange::LongTerm,
-      DiscoverTimeRange::LongTerm => DiscoverTimeRange::ShortTerm,
+      DiscoverTimeRange::Short => DiscoverTimeRange::Medium,
+      DiscoverTimeRange::Medium => DiscoverTimeRange::Long,
+      DiscoverTimeRange::Long => DiscoverTimeRange::Short,
     }
   }
 
   pub fn prev(&self) -> Self {
     match self {
-      DiscoverTimeRange::ShortTerm => DiscoverTimeRange::LongTerm,
-      DiscoverTimeRange::MediumTerm => DiscoverTimeRange::ShortTerm,
-      DiscoverTimeRange::LongTerm => DiscoverTimeRange::MediumTerm,
+      DiscoverTimeRange::Short => DiscoverTimeRange::Long,
+      DiscoverTimeRange::Medium => DiscoverTimeRange::Short,
+      DiscoverTimeRange::Long => DiscoverTimeRange::Medium,
     }
   }
 }
