@@ -1,6 +1,6 @@
 use crate::event::Key;
 use anyhow::{anyhow, Result};
-use ratatui::style::Color;
+use ratatui::style::{Color, Style};
 use serde::{Deserialize, Serialize};
 use std::{
   fs,
@@ -26,6 +26,7 @@ pub struct UserTheme {
   pub playbar_text: Option<String>,
   pub selected: Option<String>,
   pub text: Option<String>,
+  pub background: Option<String>,
   pub header: Option<String>,
   pub highlighted_lyrics: Option<String>,
 }
@@ -50,8 +51,15 @@ pub struct Theme {
   pub playbar_text: Color,
   pub selected: Color,
   pub text: Color,
+  pub background: Color,
   pub header: Color,
   pub highlighted_lyrics: Color,
+}
+
+impl Theme {
+  pub fn base_style(&self) -> Style {
+    Style::default().fg(self.text).bg(self.background)
+  }
 }
 
 impl Default for Theme {
@@ -75,6 +83,7 @@ impl Default for Theme {
       playbar_text: Color::Reset,
       selected: Color::Rgb(0, 200, 200), // LightCyan equivalent
       text: Color::Reset,
+      background: Color::Reset,
       header: Color::Reset,
       highlighted_lyrics: Color::Rgb(0, 200, 200), // LightCyan equivalent
     }
@@ -92,6 +101,7 @@ pub enum ThemePreset {
   SolarizedDark,
   Monokai,
   Gruvbox,
+  GruvboxLight,
   CatppuccinMocha,
   Custom, // When user has manually customized colors
 }
@@ -106,6 +116,7 @@ impl ThemePreset {
       ThemePreset::SolarizedDark,
       ThemePreset::Monokai,
       ThemePreset::Gruvbox,
+      ThemePreset::GruvboxLight,
       ThemePreset::CatppuccinMocha,
     ]
   }
@@ -119,6 +130,7 @@ impl ThemePreset {
       ThemePreset::SolarizedDark => "Solarized Dark",
       ThemePreset::Monokai => "Monokai",
       ThemePreset::Gruvbox => "Gruvbox",
+      ThemePreset::GruvboxLight => "Gruvbox Light",
       ThemePreset::CatppuccinMocha => "Catppuccin Mocha",
       ThemePreset::Custom => "Custom",
     }
@@ -133,6 +145,7 @@ impl ThemePreset {
       "Solarized Dark" => ThemePreset::SolarizedDark,
       "Monokai" => ThemePreset::Monokai,
       "Gruvbox" => ThemePreset::Gruvbox,
+      "Gruvbox Light" => ThemePreset::GruvboxLight,
       "Catppuccin Mocha" => ThemePreset::CatppuccinMocha,
       _ => ThemePreset::Custom,
     }
@@ -176,6 +189,7 @@ impl ThemePreset {
         playbar_text: Color::Rgb(248, 248, 242),
         selected: Color::Rgb(139, 233, 253), // Cyan
         text: Color::Rgb(248, 248, 242),
+        background: Color::Reset,
         header: Color::Rgb(255, 121, 198),             // Pink
         highlighted_lyrics: Color::Rgb(255, 121, 198), // Pink
       },
@@ -195,6 +209,7 @@ impl ThemePreset {
         playbar_text: Color::Rgb(236, 239, 244),
         selected: Color::Rgb(129, 161, 193), // Nord9
         text: Color::Rgb(236, 239, 244),     // Nord6
+        background: Color::Reset,
         header: Color::Rgb(136, 192, 208),
         highlighted_lyrics: Color::Rgb(136, 192, 208), // Nord8 (frost)
       },
@@ -214,6 +229,7 @@ impl ThemePreset {
         playbar_text: Color::Rgb(147, 161, 161), // Base1
         selected: Color::Rgb(42, 161, 152),      // Cyan
         text: Color::Rgb(147, 161, 161),         // Base1
+        background: Color::Reset,
         header: Color::Rgb(38, 139, 210),
         highlighted_lyrics: Color::Rgb(38, 139, 210), // Blue
       },
@@ -233,6 +249,7 @@ impl ThemePreset {
         playbar_text: Color::Rgb(248, 248, 242),
         selected: Color::Rgb(102, 217, 239), // Cyan
         text: Color::Rgb(248, 248, 242),
+        background: Color::Reset,
         header: Color::Rgb(249, 38, 114),
         highlighted_lyrics: Color::Rgb(249, 38, 114), // Pink
       },
@@ -250,10 +267,31 @@ impl ThemePreset {
         playbar_progress: Color::Rgb(184, 187, 38), // Green
         playbar_progress_text: Color::Rgb(235, 219, 178),
         playbar_text: Color::Rgb(235, 219, 178),
-        selected: Color::Rgb(131, 165, 152),          // Aqua
-        text: Color::Rgb(235, 219, 178),              // fg
+        selected: Color::Rgb(131, 165, 152), // Aqua
+        text: Color::Rgb(235, 219, 178),     // fg
+        background: Color::Reset,
         header: Color::Rgb(254, 128, 25),             // Orange
         highlighted_lyrics: Color::Rgb(254, 128, 25), // Orange
+      },
+      ThemePreset::GruvboxLight => Theme {
+        analysis_bar: Color::Rgb(66, 123, 88),     // Aqua
+        analysis_bar_text: Color::Rgb(60, 56, 54), // fg
+        active: Color::Rgb(121, 116, 14),          // Green
+        banner: Color::Rgb(175, 58, 3),            // Orange
+        error_border: Color::Rgb(157, 0, 6),       // Red
+        error_text: Color::Rgb(157, 0, 6),
+        hint: Color::Rgb(181, 118, 20),                // Yellow
+        hovered: Color::Rgb(143, 63, 113),             // Purple
+        inactive: Color::Rgb(146, 131, 116),           // Gray
+        playbar_background: Color::Rgb(251, 241, 199), // bg
+        playbar_progress: Color::Rgb(121, 116, 14),    // Green
+        playbar_progress_text: Color::Rgb(60, 56, 54),
+        playbar_text: Color::Rgb(60, 56, 54),
+        selected: Color::Rgb(66, 123, 88), // Aqua
+        text: Color::Rgb(60, 56, 54),      // fg
+        background: Color::Rgb(251, 241, 199),
+        header: Color::Rgb(175, 58, 3),             // Orange
+        highlighted_lyrics: Color::Rgb(175, 58, 3), // Orange
       },
       ThemePreset::CatppuccinMocha => Theme {
         analysis_bar: Color::Rgb(166, 227, 161),        // Green
@@ -271,8 +309,9 @@ impl ThemePreset {
         playbar_text: Color::Rgb(186, 194, 222),        // Subtext 1
         selected: Color::Rgb(180, 190, 254),            // Lavender
         text: Color::Rgb(205, 214, 244),                // Text
-        header: Color::Rgb(180, 190, 254),              // Lavender
-        highlighted_lyrics: Color::Rgb(180, 190, 254),  // Lavender
+        background: Color::Reset,
+        header: Color::Rgb(180, 190, 254),             // Lavender
+        highlighted_lyrics: Color::Rgb(180, 190, 254), // Lavender
       },
       ThemePreset::Spotify => Theme {
         analysis_bar: Color::Rgb(29, 185, 84), // Spotify Green #1DB954
@@ -290,7 +329,8 @@ impl ThemePreset {
         playbar_text: Color::Rgb(179, 179, 179), // Light gray
         selected: Color::Rgb(29, 185, 84),       // Spotify Green
         text: Color::Rgb(255, 255, 255),         // White
-        header: Color::Rgb(29, 185, 84),         // Spotify Green
+        background: Color::Reset,
+        header: Color::Rgb(29, 185, 84),             // Spotify Green
         highlighted_lyrics: Color::Rgb(29, 185, 84), // Spotify Green
       },
       ThemePreset::Custom => Theme::default(), // Won't be used directly
@@ -629,6 +669,7 @@ impl UserConfig {
     to_theme_item!(playbar_text);
     to_theme_item!(selected);
     to_theme_item!(text);
+    to_theme_item!(background);
     to_theme_item!(header);
     to_theme_item!(highlighted_lyrics);
     Ok(())
@@ -788,6 +829,7 @@ impl UserConfig {
       playbar_text: Some(color_to_string(self.theme.playbar_text)),
       selected: Some(color_to_string(self.theme.selected)),
       text: Some(color_to_string(self.theme.text)),
+      background: Some(color_to_string(self.theme.background)),
       header: Some(color_to_string(self.theme.header)),
       highlighted_lyrics: Some(color_to_string(self.theme.highlighted_lyrics)),
     };
