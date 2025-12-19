@@ -4387,7 +4387,7 @@ dependencies = [
 
 [[package]]
 name = "spotatui"
-version = "0.34.3"
+version = "0.34.5"
 dependencies = [
  "anyhow",
  "arboard",
