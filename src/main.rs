@@ -66,8 +66,6 @@ use crossterm::{
 use network::{IoEvent, Network};
 use ratatui::{
   backend::{Backend, CrosstermBackend},
-  style::Style,
-  widgets::Block,
   Terminal,
 };
 use redirect_uri::redirect_uri_web_server;
@@ -1505,6 +1503,8 @@ async fn start_ui(
   shared_position: Option<Arc<AtomicU64>>,
   _mpris_manager: Option<()>,
 ) -> Result<()> {
+  use ratatui::{prelude::Style, widgets::Block};
+
   // Terminal initialization
   let mut stdout = stdout();
   execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
