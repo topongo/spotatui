@@ -66,8 +66,6 @@ use crossterm::{
 use network::{IoEvent, Network};
 use ratatui::{
   backend::{Backend, CrosstermBackend},
-  style::Style,
-  widgets::Block,
   Terminal,
 };
 use redirect_uri::redirect_uri_web_server;
