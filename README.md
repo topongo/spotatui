@@ -17,6 +17,10 @@ A Spotify client for the terminal written in Rust.
 
 ![Demo](.github/demo.gif)
 
+### Song History
+
+![Song History](https://spotatui-counter.spotatui.workers.dev/chart.svg)
+
 ### ⚡ Performance
 
 spotatui is extremely lightweight compared to the official Electron client.
