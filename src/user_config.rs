@@ -341,10 +341,11 @@ impl ThemePreset {
 /// Available audio visualizer styles
 #[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub enum VisualizerStyle {
-  /// Classic mode: Uses the built-in Ratatui BarChart with gradient colors
-  #[default]
-  Classic,
   /// Equalizer mode: Uses tui-equalizer with half-block bars and brightness effect
+  ///
+  /// Note: Older configs may contain `Classic`; it is accepted as an alias for `Equalizer`.
+  #[default]
+  #[serde(alias = "Classic")]
   Equalizer,
   /// BarGraph mode: Uses tui-bar-graph with Braille patterns for high-resolution display
   BarGraph,
@@ -352,16 +353,11 @@ pub enum VisualizerStyle {
 
 impl VisualizerStyle {
   pub fn all() -> &'static [VisualizerStyle] {
-    &[
-      VisualizerStyle::Classic,
-      VisualizerStyle::Equalizer,
-      VisualizerStyle::BarGraph,
-    ]
+    &[VisualizerStyle::Equalizer, VisualizerStyle::BarGraph]
   }
 
   pub fn name(&self) -> &'static str {
     match self {
-      VisualizerStyle::Classic => "Classic",
       VisualizerStyle::Equalizer => "Equalizer",
       VisualizerStyle::BarGraph => "Bar Graph",
     }
