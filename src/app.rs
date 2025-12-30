@@ -3,7 +3,7 @@ use crate::cli::UpdateInfo;
 use crate::network::IoEvent;
 use crate::sort::{SortContext, SortState};
 use anyhow::anyhow;
-use ratatui::layout::Rect;
+use ratatui::layout::Size;
 use rspotify::{
   model::enums::Country,
   model::{
@@ -449,7 +449,7 @@ pub struct App {
   pub selected_device_index: Option<usize>,
   pub selected_playlist_index: Option<usize>,
   pub active_playlist_index: Option<usize>,
-  pub size: Rect,
+  pub size: Size,
   #[allow(dead_code)]
   pub small_search_limit: u32,
   pub song_progress_ms: u128,
@@ -538,7 +538,7 @@ impl Default for App {
       user_config: UserConfig::new(),
       saved_album_tracks_index: 0,
       recently_played: Default::default(),
-      size: Rect::default(),
+      size: Size::default(),
       selected_album_simplified: None,
       selected_album_full: None,
       home_scroll: 0,
