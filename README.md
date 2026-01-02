@@ -13,13 +13,15 @@
 
 ![Demo](.github/demo.gif)
 
-### Song History
+## Song History
 
 ![Song History](https://spotatui-counter.spotatui.workers.dev/chart.svg)
 
+<details>
+<summary><b>📑 Table of Contents</b></summary>
+
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-## Table of Contents
 
     - [🙏 Help Wanted](#-help-wanted)
     - [⚡ Performance](#-performance)
@@ -44,7 +46,9 @@
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
-### 🙏 Help Wanted
+</details>
+
+## 🙏 Help Wanted
 
 **spotatui is currently maintained by a solo developer.** More contributors would be hugely appreciated! Here's how you can help:
 
@@ -55,7 +59,7 @@
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for more details!
 
-### ⚡ Performance
+## ⚡ Performance
 
 spotatui is extremely lightweight compared to the official Electron client.
 
@@ -152,7 +156,7 @@ spotatui can play audio directly without needing spotifyd or the official Spotif
 
 📖 **See the [Native Streaming Wiki](https://github.com/LargeModGames/spotatui/wiki/Native-Streaming) for setup details.**
 
-# Configuration
+## Configuration
 
 A configuration file is located at `${HOME}/.config/spotatui/config.yml`.
 
