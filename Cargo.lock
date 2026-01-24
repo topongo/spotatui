@@ -4655,6 +4655,9 @@ dependencies = [
  "tui-bar-graph",
  "tui-equalizer",
  "unicode-width",
+ "vergen",
+ "vergen-gitcl",
+ "vergen-lib",
 ]
 
 [[package]]
