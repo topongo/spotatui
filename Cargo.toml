@@ -6,16 +6,16 @@ documentation = "https://github.com/LargeModGames/spotatui"
 repository = "https://github.com/LargeModGames/spotatui"
 keywords = ["spotify", "tui", "cli", "terminal"]
 categories = ["command-line-utilities"]
-version = "0.35.3"
+version = "0.35.4"
 authors = ["LargeModGames <LargeModGames@gmail.com>"]
 edition = "2021"
 license = "MIT"
 exclude = [
-  ".github/demo.gif",
-  ".github/workflows",
-  ".github/ISSUE_TEMPLATE",
-  "target/",
-  "snap/",
+    ".github/demo.gif",
+    ".github/workflows",
+    ".github/ISSUE_TEMPLATE",
+    "target/",
+    "snap/",
 ]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -46,6 +46,7 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 openssl = { version = "0.10", optional = true }
 cpal = { version = "0.17", optional = true }
 realfft = { version = "3.4", optional = true }
+discord-rich-presence = { version = "1.0", optional = true }
 
 # Streaming dependencies (librespot)
 # Pin vergen crates to versions compatible with librespot-core 0.8's build.rs
@@ -88,7 +89,7 @@ objc2 = { version = "0.6", optional = true }
 block2 = { version = "0.6", optional = true }
 
 [features]
-default = ["telemetry", "streaming", "audio-viz-cpal", "mpris", "macos-media"]
+default = ["telemetry", "streaming", "audio-viz-cpal", "mpris", "macos-media", "discord-rpc"]
 telemetry = ["reqwest", "reqwest/rustls-tls"]
 streaming = ["librespot-core", "librespot-playback", "librespot-connect", "librespot-oauth", "librespot-metadata"]
 # Audio backend features
@@ -104,6 +105,7 @@ audio-viz = ["realfft", "pipewire"]
 audio-viz-cpal = ["realfft", "cpal"]  # Alternative for Windows/macOS or if pipewire issues
 mpris = ["mpris-server", "streaming"]  # MPRIS D-Bus integration (Linux only, requires streaming)
 macos-media = ["objc2-media-player", "objc2-foundation", "objc2", "block2", "streaming"]  # macOS Now Playing integration
+discord-rpc = ["discord-rich-presence"]
 
 [target.'cfg(target_env = "musl")'.dependencies]
 openssl-sys = { version = "0.9", features = ["vendored"] }
@@ -118,3 +120,11 @@ codegen-units = 1  # Better optimization
 lto = true         # Link-time optimization
 opt-level = "s"    # Prioritize small binary size
 strip = true       # Remove debug symbols
+
+[package.metadata.deb]
+maintainer = "LargeModGames <LargeModGames@gmail.com>"
+copyright = "2025, LargeModGames"
+license-file = ["LICENSE", "4"]
+depends = "$auto"
+section = "utils"
+priority = "optional"

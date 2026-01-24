@@ -1,6 +1,13 @@
 # Changelog
 
-## [0.35.3] - 2026-01-22
+## [0.35.4] - 2026-01-24
+
+### Added
+
+- **Discord Rich Presence**: Show track info, album art, and a GitHub callout in Discord; enabled by default with a built-in application ID and optional overrides via config/env.
+- **AUR Binary Package**: `spotatui-bin` is now automatically published alongside releases for faster installation on Arch Linux.
+
+## [0.35.3] - 2026-01-24
 
 ### Added
 
