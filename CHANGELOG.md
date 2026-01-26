@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.35.5] - 2026-01-26
+
+### Added
+
+- **Settings Keybindings**: Add customizable keybindings for settings actions.
+
+### Fixed
+
+- **Playback Controls Responsiveness**: Improve responsiveness of playback controls while streaming.
+
 ## [0.35.4] - 2026-01-24
 
 ### Added
