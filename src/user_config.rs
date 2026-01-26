@@ -405,10 +405,33 @@ fn parse_key(key: String) -> Result<Key> {
         "pageup" => Ok(Key::PageUp),
         "pagedown" => Ok(Key::PageDown),
         "space" => Ok(Key::Char(' ')),
+        "enter" => Ok(Key::Enter),
+        "tab" => Ok(Key::Tab),
+        "home" => Ok(Key::Home),
+        "end" => Ok(Key::End),
+        "ins" | "insert" => Ok(Key::Ins),
+        "f0" => Ok(Key::F0),
+        "f1" => Ok(Key::F1),
+        "f2" => Ok(Key::F2),
+        "f3" => Ok(Key::F3),
+        "f4" => Ok(Key::F4),
+        "f5" => Ok(Key::F5),
+        "f6" => Ok(Key::F6),
+        "f7" => Ok(Key::F7),
+        "f8" => Ok(Key::F8),
+        "f9" => Ok(Key::F9),
+        "f10" => Ok(Key::F10),
+        "f11" => Ok(Key::F11),
+        "f12" => Ok(Key::F12),
         _ => Err(anyhow!("The key \"{}\" is unknown.", sections[0])),
       }
     }
   }
+}
+
+/// Public version of parse_key for use in app.rs
+pub fn parse_key_public(key: String) -> Result<Key> {
+  parse_key(key)
 }
 
 fn check_reserved_keys(key: Key) -> Result<()> {
@@ -437,6 +460,11 @@ fn check_reserved_keys(key: Key) -> Result<()> {
     }
   }
   Ok(())
+}
+
+/// Public version of check_reserved_keys for use in handlers
+pub fn check_reserved_keys_public(key: Key) -> Result<()> {
+  check_reserved_keys(key)
 }
 
 #[derive(Clone)]
@@ -472,6 +500,8 @@ pub struct KeyBindingsString {
   audio_analysis: Option<String>,
   basic_view: Option<String>,
   add_item_to_queue: Option<String>,
+  open_settings: Option<String>,
+  save_settings: Option<String>,
 }
 
 #[derive(Clone)]
@@ -502,6 +532,8 @@ pub struct KeyBindings {
   pub audio_analysis: Key,
   pub basic_view: Key,
   pub add_item_to_queue: Key,
+  pub open_settings: Key,
+  pub save_settings: Key,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -567,6 +599,12 @@ pub struct UserConfig {
 
 impl UserConfig {
   pub fn new() -> UserConfig {
+    // Detect platform for platform-specific defaults
+    #[cfg(target_os = "macos")]
+    let is_macos = true;
+    #[cfg(not(target_os = "macos"))]
+    let is_macos = false;
+
     UserConfig {
       theme: Default::default(),
       keys: KeyBindings {
@@ -596,6 +634,14 @@ impl UserConfig {
         audio_analysis: Key::Char('v'),
         basic_view: Key::Char('B'),
         add_item_to_queue: Key::Char('z'),
+        // On macOS, use Ctrl+, for settings since Alt+, produces ≤ on most keyboard layouts
+        // On other platforms, keep Alt+, for consistency with many apps
+        open_settings: if is_macos {
+          Key::Ctrl(',')
+        } else {
+          Key::Alt(',')
+        },
+        save_settings: Key::Alt('s'),
       },
       behavior: BehaviorConfig {
         seek_milliseconds: 5 * 1000,
@@ -654,7 +700,6 @@ impl UserConfig {
       ($name: ident) => {
         if let Some(key_string) = keybindings.$name {
           self.keys.$name = parse_key(key_string)?;
-          check_reserved_keys(self.keys.$name)?;
         }
       };
     }
@@ -685,6 +730,8 @@ impl UserConfig {
     to_keys!(audio_analysis);
     to_keys!(basic_view);
     to_keys!(add_item_to_queue);
+    to_keys!(open_settings);
+    to_keys!(save_settings);
 
     Ok(())
   }
@@ -871,6 +918,76 @@ impl UserConfig {
       visualizer_style: Some(self.behavior.visualizer_style),
     };
 
+    // Helper to convert Key to config string
+    let key_to_config_string = |key: Key| -> String {
+      match key {
+        Key::Char(' ') => "space".to_string(),
+        Key::Char(c) => c.to_string(),
+        Key::Ctrl(c) => format!("ctrl-{}", c),
+        Key::Alt(c) => format!("alt-{}", c),
+        Key::Enter => "enter".to_string(),
+        Key::Tab => "tab".to_string(),
+        Key::Esc => "esc".to_string(),
+        Key::Backspace => "backspace".to_string(),
+        Key::Delete => "del".to_string(),
+        Key::Left => "left".to_string(),
+        Key::Right => "right".to_string(),
+        Key::Up => "up".to_string(),
+        Key::Down => "down".to_string(),
+        Key::Home => "home".to_string(),
+        Key::End => "end".to_string(),
+        Key::Ins => "ins".to_string(),
+        Key::PageUp => "pageup".to_string(),
+        Key::PageDown => "pagedown".to_string(),
+        Key::F0 => "f0".to_string(),
+        Key::F1 => "f1".to_string(),
+        Key::F2 => "f2".to_string(),
+        Key::F3 => "f3".to_string(),
+        Key::F4 => "f4".to_string(),
+        Key::F5 => "f5".to_string(),
+        Key::F6 => "f6".to_string(),
+        Key::F7 => "f7".to_string(),
+        Key::F8 => "f8".to_string(),
+        Key::F9 => "f9".to_string(),
+        Key::F10 => "f10".to_string(),
+        Key::F11 => "f11".to_string(),
+        Key::F12 => "f12".to_string(),
+        _ => "unknown".to_string(),
+      }
+    };
+
+    // Helper to build keybindings config from current values
+    let build_keybindings = || KeyBindingsString {
+      back: Some(key_to_config_string(self.keys.back)),
+      next_page: Some(key_to_config_string(self.keys.next_page)),
+      previous_page: Some(key_to_config_string(self.keys.previous_page)),
+      jump_to_start: Some(key_to_config_string(self.keys.jump_to_start)),
+      jump_to_end: Some(key_to_config_string(self.keys.jump_to_end)),
+      jump_to_album: Some(key_to_config_string(self.keys.jump_to_album)),
+      jump_to_artist_album: Some(key_to_config_string(self.keys.jump_to_artist_album)),
+      jump_to_context: Some(key_to_config_string(self.keys.jump_to_context)),
+      manage_devices: Some(key_to_config_string(self.keys.manage_devices)),
+      decrease_volume: Some(key_to_config_string(self.keys.decrease_volume)),
+      increase_volume: Some(key_to_config_string(self.keys.increase_volume)),
+      toggle_playback: Some(key_to_config_string(self.keys.toggle_playback)),
+      seek_backwards: Some(key_to_config_string(self.keys.seek_backwards)),
+      seek_forwards: Some(key_to_config_string(self.keys.seek_forwards)),
+      next_track: Some(key_to_config_string(self.keys.next_track)),
+      previous_track: Some(key_to_config_string(self.keys.previous_track)),
+      help: Some(key_to_config_string(self.keys.help)),
+      shuffle: Some(key_to_config_string(self.keys.shuffle)),
+      repeat: Some(key_to_config_string(self.keys.repeat)),
+      search: Some(key_to_config_string(self.keys.search)),
+      submit: Some(key_to_config_string(self.keys.submit)),
+      copy_song_url: Some(key_to_config_string(self.keys.copy_song_url)),
+      copy_album_url: Some(key_to_config_string(self.keys.copy_album_url)),
+      audio_analysis: Some(key_to_config_string(self.keys.audio_analysis)),
+      basic_view: Some(key_to_config_string(self.keys.basic_view)),
+      add_item_to_queue: Some(key_to_config_string(self.keys.add_item_to_queue)),
+      open_settings: Some(key_to_config_string(self.keys.open_settings)),
+      save_settings: Some(key_to_config_string(self.keys.save_settings)),
+    };
+
     // Helper to build theme config from current values
     let build_theme = || UserTheme {
       active: Some(color_to_string(self.theme.active)),
@@ -896,20 +1013,21 @@ impl UserConfig {
       let config_string = fs::read_to_string(&paths.config_file_path)?;
       if !config_string.trim().is_empty() {
         let mut existing: UserConfigString = serde_yaml::from_str(&config_string)?;
-        // Update behavior and theme
+        // Update behavior, theme, and keybindings
         existing.behavior = Some(build_behavior());
         existing.theme = Some(build_theme());
+        existing.keybindings = Some(build_keybindings());
         existing
       } else {
         UserConfigString {
-          keybindings: None,
+          keybindings: Some(build_keybindings()),
           behavior: Some(build_behavior()),
           theme: Some(build_theme()),
         }
       }
     } else {
       UserConfigString {
-        keybindings: None,
+        keybindings: Some(build_keybindings()),
         behavior: Some(build_behavior()),
         theme: Some(build_theme()),
       }
@@ -1001,6 +1119,26 @@ mod tests {
     assert_eq!(parse_key(String::from("-")).unwrap(), Key::Char('-'));
     assert_eq!(parse_key(String::from("esc")).unwrap(), Key::Esc);
     assert_eq!(parse_key(String::from("del")).unwrap(), Key::Delete);
+    // Test new keys
+    assert_eq!(parse_key(String::from("enter")).unwrap(), Key::Enter);
+    assert_eq!(parse_key(String::from("tab")).unwrap(), Key::Tab);
+    assert_eq!(parse_key(String::from("home")).unwrap(), Key::Home);
+    assert_eq!(parse_key(String::from("end")).unwrap(), Key::End);
+    assert_eq!(parse_key(String::from("ins")).unwrap(), Key::Ins);
+    assert_eq!(parse_key(String::from("insert")).unwrap(), Key::Ins);
+    assert_eq!(parse_key(String::from("f0")).unwrap(), Key::F0);
+    assert_eq!(parse_key(String::from("f1")).unwrap(), Key::F1);
+    assert_eq!(parse_key(String::from("f2")).unwrap(), Key::F2);
+    assert_eq!(parse_key(String::from("f3")).unwrap(), Key::F3);
+    assert_eq!(parse_key(String::from("f4")).unwrap(), Key::F4);
+    assert_eq!(parse_key(String::from("f5")).unwrap(), Key::F5);
+    assert_eq!(parse_key(String::from("f6")).unwrap(), Key::F6);
+    assert_eq!(parse_key(String::from("f7")).unwrap(), Key::F7);
+    assert_eq!(parse_key(String::from("f8")).unwrap(), Key::F8);
+    assert_eq!(parse_key(String::from("f9")).unwrap(), Key::F9);
+    assert_eq!(parse_key(String::from("f10")).unwrap(), Key::F10);
+    assert_eq!(parse_key(String::from("f11")).unwrap(), Key::F11);
+    assert_eq!(parse_key(String::from("f12")).unwrap(), Key::F12);
   }
 
   #[test]

@@ -98,8 +98,7 @@ pub fn handle_app(key: Key, app: &mut App) {
     _ if key == app.user_config.keys.basic_view => {
       app.push_navigation_stack(RouteId::BasicView, ActiveBlock::BasicView);
     }
-    // Open settings with Alt-,
-    Key::Alt(',') => {
+    _ if key == app.user_config.keys.open_settings => {
       app.load_settings_for_category();
       app.push_navigation_stack(RouteId::Settings, ActiveBlock::Settings);
     }

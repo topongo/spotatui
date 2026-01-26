@@ -153,12 +153,16 @@ fn draw_settings_help(f: &mut Frame<'_>, app: &App, area: Rect) {
         SettingValue::Number(_) => {
           "↑/↓: Increment/Decrement | Type numbers | Enter: Confirm | Esc: Cancel"
         }
+        SettingValue::Key(_) => "Press any key to set binding | Esc: Cancel",
         _ => "Type to edit | Enter: Confirm | Esc: Cancel",
       },
       None => "",
     }
   } else {
-    "↑/↓: Select | ←/→: Switch Tab | Enter: Toggle/Edit | Alt-S: Save | Esc/q: Exit"
+    &format!(
+      "↑/↓: Select | ←/→: Switch Tab | Enter: Toggle/Edit | {}: Save | Esc/q: Exit",
+      app.user_config.keys.save_settings
+    )
   };
 
   let help = Paragraph::new(help_text)

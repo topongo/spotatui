@@ -24,7 +24,7 @@ fn handle_navigation(key: Key, app: &mut App) {
     Key::Enter => enter_edit_mode(app),
 
     // Save settings
-    Key::Alt('s') => save_settings(app),
+    key if key == app.user_config.keys.save_settings => save_settings(app),
 
     // Exit settings
     Key::Esc => {
@@ -43,9 +43,8 @@ fn handle_edit_mode(key: Key, app: &mut App) {
       SettingValue::Bool(_) => handle_bool_edit(key, app),
       SettingValue::Number(_) => handle_number_edit(key, app),
       SettingValue::Preset(_) => handle_preset_edit(key, app),
-      SettingValue::String(_) | SettingValue::Key(_) | SettingValue::Color(_) => {
-        handle_string_edit(key, app)
-      }
+      SettingValue::Key(_) => handle_key_edit(key, app),
+      SettingValue::String(_) | SettingValue::Color(_) => handle_string_edit(key, app),
     }
   }
 }
@@ -132,9 +131,6 @@ fn handle_string_edit(key: Key, app: &mut App) {
           SettingValue::String(_) => {
             setting.value = SettingValue::String(new_value);
           }
-          SettingValue::Key(_) => {
-            setting.value = SettingValue::Key(new_value);
-          }
           SettingValue::Color(_) => {
             setting.value = SettingValue::Color(new_value);
           }
@@ -155,6 +151,123 @@ fn handle_string_edit(key: Key, app: &mut App) {
       app.settings_edit_buffer.pop();
     }
     _ => {}
+  }
+}
+
+/// Check if a keybinding conflicts with another action
+/// Returns Some(action_name) if conflict found, None otherwise
+fn check_keybinding_conflict(app: &App, new_key: Key, current_setting_id: &str) -> Option<String> {
+  // Iterate through all settings items
+  for setting in &app.settings_items {
+    // Skip if it's the same setting we're editing
+    if setting.id == current_setting_id {
+      continue;
+    }
+
+    // Only check keybinding settings
+    if !setting.id.starts_with("keys.") {
+      continue;
+    }
+
+    // Get the key value from this setting
+    if let SettingValue::Key(key_string) = &setting.value {
+      // Parse the key string to compare
+      if let Ok(existing_key) = crate::user_config::parse_key_public(key_string.clone()) {
+        // Check if keys match (case-sensitive comparison)
+        if existing_key == new_key {
+          // Return the friendly name of the conflicting action
+          return Some(setting.name.clone());
+        }
+      }
+    }
+  }
+
+  None
+}
+
+fn handle_key_edit(key: Key, app: &mut App) {
+  match key {
+    // Escape cancels the key binding edit
+    Key::Esc => {
+      app.settings_edit_mode = false;
+      app.settings_edit_buffer.clear();
+    }
+    // Any other key press is captured as the new keybinding
+    _ => {
+      // Check if this is a reserved key
+      if let Err(e) = crate::user_config::check_reserved_keys_public(key) {
+        // Show error but don't apply the reserved key
+        app.handle_error(anyhow::anyhow!("{}", e));
+        app.settings_edit_mode = false;
+        app.settings_edit_buffer.clear();
+        return;
+      }
+
+      // Check for keybinding conflicts
+      if let Some(setting) = app.settings_items.get(app.settings_selected_index) {
+        if let Some(conflict_name) = check_keybinding_conflict(app, key, &setting.id) {
+          // Show error and don't apply the conflicting key
+          let key_display = key_to_config_string(&key);
+          app.handle_error(anyhow::anyhow!(
+            "Key {} is already assigned to {}",
+            key_display,
+            conflict_name
+          ));
+          app.settings_edit_mode = false;
+          app.settings_edit_buffer.clear();
+          return;
+        }
+      }
+
+      // Convert the key to string representation
+      let key_string = key_to_config_string(&key);
+
+      // Apply the new keybinding
+      if let Some(setting) = app.settings_items.get_mut(app.settings_selected_index) {
+        setting.value = SettingValue::Key(key_string);
+      }
+
+      app.settings_edit_mode = false;
+      app.settings_edit_buffer.clear();
+    }
+  }
+}
+
+/// Convert a Key to its config file string representation
+fn key_to_config_string(key: &Key) -> String {
+  match key {
+    Key::Char(c) if *c == ' ' => "space".to_string(),
+    Key::Char(c) => c.to_string(),
+    Key::Ctrl(c) => format!("ctrl-{}", c),
+    Key::Alt(c) => format!("alt-{}", c),
+    Key::Enter => "enter".to_string(),
+    Key::Esc => "esc".to_string(),
+    Key::Backspace => "backspace".to_string(),
+    Key::Delete => "del".to_string(),
+    Key::Left => "left".to_string(),
+    Key::Right => "right".to_string(),
+    Key::Up => "up".to_string(),
+    Key::Down => "down".to_string(),
+    Key::PageUp => "pageup".to_string(),
+    Key::PageDown => "pagedown".to_string(),
+    Key::Home => "home".to_string(),
+    Key::End => "end".to_string(),
+    Key::Tab => "tab".to_string(),
+    Key::Ins => "ins".to_string(),
+    Key::F0 => "f0".to_string(),
+    Key::F1 => "f1".to_string(),
+    Key::F2 => "f2".to_string(),
+    Key::F3 => "f3".to_string(),
+    Key::F4 => "f4".to_string(),
+    Key::F5 => "f5".to_string(),
+    Key::F6 => "f6".to_string(),
+    Key::F7 => "f7".to_string(),
+    Key::F8 => "f8".to_string(),
+    Key::F9 => "f9".to_string(),
+    Key::F10 => "f10".to_string(),
+    Key::F11 => "f11".to_string(),
+    Key::F12 => "f12".to_string(),
+    Key::Unknown => "unknown".to_string(),
   }
 }
 

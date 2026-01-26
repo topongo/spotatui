@@ -159,8 +159,13 @@ pub fn get_help_docs(key_bindings: &KeyBindings) -> Vec<Vec<String>> {
     ],
     vec![
       String::from("Open settings"),
-      String::from("<Alt+,>"),
+      key_bindings.open_settings.to_string(),
       String::from("General"),
+    ],
+    vec![
+      String::from("Save settings"),
+      key_bindings.save_settings.to_string(),
+      String::from("Settings"),
     ],
     vec![
       String::from("Enter hover mode"),

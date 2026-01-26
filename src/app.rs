@@ -1914,6 +1914,84 @@ impl App {
           description: "Show help menu".to_string(),
           value: SettingValue::Key(key_to_string(&self.user_config.keys.help)),
         },
+        SettingItem {
+          id: "keys.open_settings".to_string(),
+          name: "Open Settings".to_string(),
+          description: "Open settings menu".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.open_settings)),
+        },
+        SettingItem {
+          id: "keys.save_settings".to_string(),
+          name: "Save Settings".to_string(),
+          description: "Save settings to file".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.save_settings)),
+        },
+        SettingItem {
+          id: "keys.jump_to_album".to_string(),
+          name: "Jump to Album".to_string(),
+          description: "Jump to currently playing album".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.jump_to_album)),
+        },
+        SettingItem {
+          id: "keys.jump_to_artist_album".to_string(),
+          name: "Jump to Artist".to_string(),
+          description: "Jump to artist's albums".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.jump_to_artist_album)),
+        },
+        SettingItem {
+          id: "keys.jump_to_context".to_string(),
+          name: "Jump to Context".to_string(),
+          description: "Jump to current playback context".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.jump_to_context)),
+        },
+        SettingItem {
+          id: "keys.manage_devices".to_string(),
+          name: "Manage Devices".to_string(),
+          description: "Open device selection".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.manage_devices)),
+        },
+        SettingItem {
+          id: "keys.decrease_volume".to_string(),
+          name: "Decrease Volume".to_string(),
+          description: "Decrease playback volume".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.decrease_volume)),
+        },
+        SettingItem {
+          id: "keys.increase_volume".to_string(),
+          name: "Increase Volume".to_string(),
+          description: "Increase playback volume".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.increase_volume)),
+        },
+        SettingItem {
+          id: "keys.add_item_to_queue".to_string(),
+          name: "Add to Queue".to_string(),
+          description: "Add selected item to queue".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.add_item_to_queue)),
+        },
+        SettingItem {
+          id: "keys.copy_song_url".to_string(),
+          name: "Copy Song URL".to_string(),
+          description: "Copy current song URL to clipboard".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.copy_song_url)),
+        },
+        SettingItem {
+          id: "keys.copy_album_url".to_string(),
+          name: "Copy Album URL".to_string(),
+          description: "Copy current album URL to clipboard".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.copy_album_url)),
+        },
+        SettingItem {
+          id: "keys.audio_analysis".to_string(),
+          name: "Audio Analysis".to_string(),
+          description: "Open audio analysis view".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.audio_analysis)),
+        },
+        SettingItem {
+          id: "keys.basic_view".to_string(),
+          name: "Basic View".to_string(),
+          description: "Open lyrics/basic view".to_string(),
+          value: SettingValue::Key(key_to_string(&self.user_config.keys.basic_view)),
+        },
       ],
       SettingsCategory::Theme => {
         fn color_to_string(color: ratatui::style::Color) -> String {
@@ -2082,6 +2160,182 @@ impl App {
         "behavior.paused_icon" => {
           if let SettingValue::String(v) = &setting.value {
             self.user_config.behavior.paused_icon = v.clone();
+          }
+        }
+        // Keybindings
+        "keys.back" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.back = key;
+            }
+          }
+        }
+        "keys.next_page" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.next_page = key;
+            }
+          }
+        }
+        "keys.previous_page" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.previous_page = key;
+            }
+          }
+        }
+        "keys.toggle_playback" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.toggle_playback = key;
+            }
+          }
+        }
+        "keys.seek_backwards" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.seek_backwards = key;
+            }
+          }
+        }
+        "keys.seek_forwards" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.seek_forwards = key;
+            }
+          }
+        }
+        "keys.next_track" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.next_track = key;
+            }
+          }
+        }
+        "keys.previous_track" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.previous_track = key;
+            }
+          }
+        }
+        "keys.shuffle" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.shuffle = key;
+            }
+          }
+        }
+        "keys.repeat" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.repeat = key;
+            }
+          }
+        }
+        "keys.search" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.search = key;
+            }
+          }
+        }
+        "keys.help" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.help = key;
+            }
+          }
+        }
+        "keys.open_settings" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.open_settings = key;
+            }
+          }
+        }
+        "keys.save_settings" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.save_settings = key;
+            }
+          }
+        }
+        "keys.jump_to_album" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.jump_to_album = key;
+            }
+          }
+        }
+        "keys.jump_to_artist_album" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.jump_to_artist_album = key;
+            }
+          }
+        }
+        "keys.jump_to_context" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.jump_to_context = key;
+            }
+          }
+        }
+        "keys.manage_devices" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.manage_devices = key;
+            }
+          }
+        }
+        "keys.decrease_volume" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.decrease_volume = key;
+            }
+          }
+        }
+        "keys.increase_volume" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.increase_volume = key;
+            }
+          }
+        }
+        "keys.add_item_to_queue" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.add_item_to_queue = key;
+            }
+          }
+        }
+        "keys.copy_song_url" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.copy_song_url = key;
+            }
+          }
+        }
+        "keys.copy_album_url" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.copy_album_url = key;
+            }
+          }
+        }
+        "keys.audio_analysis" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.audio_analysis = key;
+            }
+          }
+        }
+        "keys.basic_view" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.basic_view = key;
+            }
           }
         }
         // Theme preset - applies all colors at once
