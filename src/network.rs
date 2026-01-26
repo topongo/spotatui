@@ -184,41 +184,40 @@ impl Network {
       return false;
     }
 
-    // First, check if the current playback device matches the native streaming device
-    {
-      let app = self.app.lock().await;
-      if let Some(ref ctx) = app.current_playback_context {
-        if let (Some(current_id), Some(native_id)) =
-          (ctx.device.id.as_ref(), app.native_device_id.as_ref())
-        {
-          if current_id == native_id {
-            return true;
-          }
-        }
-      }
-    }
-
-    // Fallback: strict name match (case-insensitive).
+    // Get native device name once (no lock needed)
     let native_device_name = self
       .streaming_player
       .as_ref()
       .map(|p| p.device_name().to_lowercase());
+
+    // Single lock acquisition - check all conditions in one go
+    let app = self.app.lock().await;
+
+    // If no context yet (e.g., at startup), use the app state flag which is
+    // set when the native streaming device is activated/selected.
+    let Some(ref ctx) = app.current_playback_context else {
+      return app.is_streaming_active;
+    };
+
+    // First, check if the current playback device matches the native streaming device ID
+    if let (Some(current_id), Some(native_id)) =
+      (ctx.device.id.as_ref(), app.native_device_id.as_ref())
     {
-      let app = self.app.lock().await;
-      if let (Some(ref ctx), Some(native_name)) =
-        (&app.current_playback_context, native_device_name.as_ref())
-      {
-        let current_device_name = ctx.device.name.to_lowercase();
-        if current_device_name == native_name.as_str() {
-          return true;
-        }
+      if current_id == native_id {
+        return true;
       }
     }
 
-    // If no context yet (e.g., at startup), fall back to the app state flag which is
-    // set when the native streaming device is activated/selected.
-    let app = self.app.lock().await;
-    app.is_streaming_active
+    // Fallback: strict name match (case-insensitive)
+    if let Some(native_name) = native_device_name.as_ref() {
+      let current_device_name = ctx.device.name.to_lowercase();
+      if current_device_name == native_name.as_str() {
+        return true;
+      }
+    }
+
+    // No match - not the active device
+    false
   }
 
   /// Quick check if native streaming is connected (doesn't verify active device)
@@ -1641,8 +1640,8 @@ impl Network {
     // Don't pin commands to a saved device_id; target Spotify's currently active device.
     match self.spotify.seek_track(position, None).await {
       Ok(()) => {
-        // Reduced delay for API seek (still needed for server sync)
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Minimal delay for API seek (reduced from 200ms to 100ms)
+        tokio::time::sleep(Duration::from_millis(100)).await;
         self.get_current_playback().await;
       }
       Err(e) => {
@@ -1690,17 +1689,15 @@ impl Network {
     // API-based skip for external players (spotifyd, etc.)
     match self.spotify.next_track(None).await {
       Ok(()) => {
-        // Small delay to let the external player process the skip
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
         // For external players, proactively resume if we were playing
         // Spotifyd often lands in paused state after skip
         if was_playing {
+          tokio::time::sleep(Duration::from_millis(100)).await;
           let _ = self.spotify.resume_playback(None, None).await;
         }
 
-        // Small delay then fetch updated state
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Minimal delay then fetch updated state (reduced from 400ms total to ~150ms)
+        tokio::time::sleep(Duration::from_millis(150)).await;
         self.get_current_playback().await;
       }
       Err(e) => {
@@ -1748,17 +1745,15 @@ impl Network {
     // API-based skip for external players (spotifyd, etc.)
     match self.spotify.previous_track(None).await {
       Ok(()) => {
-        // Small delay to let the external player process the skip
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
         // For external players, proactively resume if we were playing
         // Spotifyd often lands in paused state after skip
         if was_playing {
+          tokio::time::sleep(Duration::from_millis(100)).await;
           let _ = self.spotify.resume_playback(None, None).await;
         }
 
-        // Small delay then fetch updated state
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Minimal delay then fetch updated state (reduced from 400ms total to ~150ms)
+        tokio::time::sleep(Duration::from_millis(150)).await;
         self.get_current_playback().await;
       }
       Err(e) => {
@@ -1804,36 +1799,35 @@ impl Network {
     }
 
     // Fallback: API-based shuffle for external devices (spotifyd, phone, etc.)
-    // Don't pin commands to a saved device_id; target Spotify's currently active device.
-    match self.spotify.shuffle(new_shuffle_state, None).await {
-      Ok(()) => {
-        // Update the UI eagerly (otherwise the UI will wait until the next 5 second interval
-        // due to polling playback context)
-        let mut app = self.app.lock().await;
-        if let Some(current_playback_context) = &mut app.current_playback_context {
-          current_playback_context.shuffle_state = new_shuffle_state;
-        };
-        app.user_config.behavior.shuffle_enabled = new_shuffle_state;
-        let _ = app.user_config.save_config();
+    // Update UI optimistically before API call for instant feedback
+    {
+      let mut app = self.app.lock().await;
+      if let Some(ctx) = &mut app.current_playback_context {
+        ctx.shuffle_state = new_shuffle_state;
       }
-      Err(e) => {
-        // On startup we try to apply the saved shuffle preference before there is any active
-        // playback device. Spotify returns a 404 in this case; don't show the error screen.
-        if is_startup_sync {
-          if let rspotify::ClientError::Http(http) = &e {
-            if let rspotify::http::HttpError::StatusCode(response) = http.as_ref() {
-              if response.status().as_u16() == 404 {
-                let mut app = self.app.lock().await;
-                app.user_config.behavior.shuffle_enabled = new_shuffle_state;
-                let _ = app.user_config.save_config();
-                return;
-              }
+      app.user_config.behavior.shuffle_enabled = new_shuffle_state;
+      let _ = app.user_config.save_config();
+    }
+
+    // Send API request (don't block on response)
+    // Don't pin commands to a saved device_id; target Spotify's currently active device.
+    if let Err(e) = self.spotify.shuffle(new_shuffle_state, None).await {
+      // On startup we try to apply the saved shuffle preference before there is any active
+      // playback device. Spotify returns a 404 in this case; don't show the error screen.
+      if is_startup_sync {
+        if let rspotify::ClientError::Http(http) = &e {
+          if let rspotify::http::HttpError::StatusCode(response) = http.as_ref() {
+            if response.status().as_u16() == 404 {
+              let mut app = self.app.lock().await;
+              app.user_config.behavior.shuffle_enabled = new_shuffle_state;
+              let _ = app.user_config.save_config();
+              return;
             }
           }
         }
-        self.handle_error(anyhow!(e)).await;
       }
-    };
+      self.handle_error(anyhow!(e)).await;
+    }
   }
 
   async fn repeat(&mut self, repeat_state: RepeatState) {
@@ -1861,19 +1855,27 @@ impl Network {
       return;
     }
 
-    // Fallback: API-based repeat for external devices (updates UI after API call succeeds)
+    // Fallback: API-based repeat for external devices
+    // Update UI optimistically before API call for instant feedback
+    {
+      let mut app = self.app.lock().await;
+      if let Some(ctx) = &mut app.current_playback_context {
+        ctx.repeat_state = next_repeat_state;
+      }
+    }
+
+    // Send API request (don't block on response)
     // Don't pin commands to a saved device_id; target Spotify's currently active device.
-    match self.spotify.repeat(next_repeat_state, None).await {
-      Ok(()) => {
+    if let Err(e) = self.spotify.repeat(next_repeat_state, None).await {
+      // Revert on error
+      {
         let mut app = self.app.lock().await;
-        if let Some(current_playback_context) = &mut app.current_playback_context {
-          current_playback_context.repeat_state = next_repeat_state;
-        };
+        if let Some(ctx) = &mut app.current_playback_context {
+          ctx.repeat_state = repeat_state; // Revert to original state
+        }
       }
-      Err(e) => {
-        self.handle_error(anyhow!(e)).await;
-      }
-    };
+      self.handle_error(anyhow!(e)).await;
+    }
   }
 
   async fn pause_playback(&mut self) {
@@ -1964,21 +1966,22 @@ impl Network {
     }
 
     // Fallback to API-based volume control
+    // Update UI optimistically before API call for instant feedback
+    {
+      let mut app = self.app.lock().await;
+      if let Some(ctx) = &mut app.current_playback_context {
+        ctx.device.volume_percent = Some(volume_percent.into());
+      }
+      // Persist volume setting
+      app.user_config.behavior.volume_percent = volume_percent;
+      let _ = app.user_config.save_config();
+    }
+
+    // Send API request (don't block on response)
     // Don't pin commands to a saved device_id; target Spotify's currently active device.
-    match self.spotify.volume(volume_percent, None).await {
-      Ok(()) => {
-        let mut app = self.app.lock().await;
-        if let Some(current_playback_context) = &mut app.current_playback_context {
-          current_playback_context.device.volume_percent = Some(volume_percent.into());
-        };
-        // Persist volume setting
-        app.user_config.behavior.volume_percent = volume_percent;
-        let _ = app.user_config.save_config();
-      }
-      Err(e) => {
-        self.handle_error(anyhow!(e)).await;
-      }
-    };
+    if let Err(e) = self.spotify.volume(volume_percent, None).await {
+      self.handle_error(anyhow!(e)).await;
+    }
   }
 
   async fn get_artist(

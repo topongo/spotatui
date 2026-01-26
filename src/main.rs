@@ -697,6 +697,13 @@ of the app. Beware that this comes at a CPU cost!",
       println!("Native playback enabled - 'spotatui' is available as a Spotify Connect device");
     }
 
+    // Store streaming player reference in App for direct control (bypasses event channel)
+    #[cfg(feature = "streaming")]
+    {
+      let mut app_mut = app.lock().await;
+      app_mut.streaming_player = streaming_player.clone();
+    }
+
     // Clone streaming player and device name for use in network spawn
     #[cfg(feature = "streaming")]
     let streaming_player_clone = streaming_player.clone();
@@ -1474,23 +1481,8 @@ async fn start_ui(
   #[cfg(feature = "discord-rpc")]
   let mut discord_presence_state = DiscordPresenceState::default();
 
-  // Check for updates SYNCHRONOUSLY before starting the event loop
-  // This ensures the update prompt appears before any user interaction
-  {
-    let update_info = tokio::task::spawn_blocking(cli::check_for_update_silent)
-      .await
-      .ok()
-      .flatten();
-    if let Some(info) = update_info {
-      let mut app = app.lock().await;
-      app.update_available = Some(info);
-      // Push the mandatory update prompt modal onto navigation stack
-      app.push_navigation_stack(RouteId::UpdatePrompt, ActiveBlock::UpdatePrompt);
-    }
-  }
-
-  // play music on, if not send them to the device selection view
-
+  // Update check will run async after first render to avoid blocking startup
+  let mut update_check_spawned = false;
   let mut is_first_render = true;
 
   loop {
@@ -1690,6 +1682,24 @@ async fn start_ui(
       app.help_docs_size = ui::help::get_help_docs(&app.user_config.keys).len() as u32;
 
       is_first_render = false;
+    }
+
+    // Check for updates async after first render to avoid blocking startup
+    if !update_check_spawned {
+      update_check_spawned = true;
+      let app_for_update = Arc::clone(&app);
+      tokio::spawn(async move {
+        if let Some(update_info) = tokio::task::spawn_blocking(cli::check_for_update_silent)
+          .await
+          .ok()
+          .flatten()
+        {
+          let mut app = app_for_update.lock().await;
+          app.update_available = Some(update_info);
+          // Push the update prompt modal onto navigation stack
+          app.push_navigation_stack(RouteId::UpdatePrompt, ActiveBlock::UpdatePrompt);
+        }
+      });
     }
   }
 

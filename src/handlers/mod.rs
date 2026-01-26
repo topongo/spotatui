@@ -68,7 +68,7 @@ pub fn handle_app(key: Key, app: &mut App) {
       app.seek_forwards();
     }
     _ if key == app.user_config.keys.next_track => {
-      app.dispatch(IoEvent::NextTrack);
+      app.next_track();
     }
     _ if key == app.user_config.keys.previous_track => {
       app.previous_track();

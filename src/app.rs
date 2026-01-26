@@ -23,6 +23,8 @@ use rspotify::{
   prelude::*, // Adds Id trait for .id() method
 };
 use std::sync::mpsc::Sender;
+#[cfg(feature = "streaming")]
+use std::sync::Arc;
 use std::{
   cmp::{max, min},
   collections::HashSet,
@@ -528,6 +530,9 @@ pub struct App {
   pub status_message_expires_at: Option<Instant>,
   /// Pending track table selection to apply when new page loads
   pub pending_track_table_selection: Option<PendingTrackSelection>,
+  /// Reference to the native streaming player for direct control (bypasses event channel)
+  #[cfg(feature = "streaming")]
+  pub streaming_player: Option<Arc<crate::player::StreamingPlayer>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -653,6 +658,8 @@ impl Default for App {
       status_message: None,
       status_message_expires_at: None,
       pending_track_table_selection: None,
+      #[cfg(feature = "streaming")]
+      streaming_player: None,
     }
   }
 }
@@ -818,7 +825,20 @@ impl App {
       );
 
       self.seek_ms = Some(new_progress as u128);
-      // Dispatch the seek immediately instead of waiting for the poll interval
+
+      // Use native streaming player for instant control (bypasses event channel latency)
+      #[cfg(feature = "streaming")]
+      if self.is_streaming_active {
+        if let Some(ref player) = self.streaming_player {
+          player.seek(new_progress);
+          // Update UI state immediately
+          self.song_progress_ms = new_progress as u128;
+          self.seek_ms = None;
+          return;
+        }
+      }
+
+      // Fallback: Dispatch the seek immediately for external devices
       self.apply_seek(new_progress);
     }
   }
@@ -831,7 +851,20 @@ impl App {
     let new_progress =
       (old_progress as u32).saturating_sub(self.user_config.behavior.seek_milliseconds);
     self.seek_ms = Some(new_progress as u128);
-    // Dispatch the seek immediately instead of waiting for the poll interval
+
+    // Use native streaming player for instant control (bypasses event channel latency)
+    #[cfg(feature = "streaming")]
+    if self.is_native_streaming_active_for_playback() {
+      if let Some(ref player) = self.streaming_player {
+        player.seek(new_progress);
+        // Update UI state immediately
+        self.song_progress_ms = new_progress as u128;
+        self.seek_ms = None;
+        return;
+      }
+    }
+
+    // Fallback: Dispatch the seek immediately for external devices
     self.dispatch(IoEvent::Seek(new_progress));
   }
 
@@ -881,6 +914,23 @@ impl App {
       );
 
       if next_volume != current_volume {
+        // Use native streaming player for instant control (bypasses event channel latency)
+        #[cfg(feature = "streaming")]
+        if self.is_native_streaming_active_for_playback() {
+          if let Some(ref player) = self.streaming_player {
+            player.set_volume(next_volume);
+
+            // Update UI state immediately
+            if let Some(ctx) = &mut self.current_playback_context {
+              ctx.device.volume_percent = Some(next_volume.into());
+            }
+            self.user_config.behavior.volume_percent = next_volume;
+            let _ = self.user_config.save_config();
+            return;
+          }
+        }
+
+        // Fallback to API-based volume control for external devices
         self.dispatch(IoEvent::ChangeVolume(next_volume));
       }
     }
@@ -895,7 +945,26 @@ impl App {
       );
 
       if next_volume != current_volume {
-        self.dispatch(IoEvent::ChangeVolume(next_volume as u8));
+        let next_volume_u8 = next_volume as u8;
+
+        // Use native streaming player for instant control (bypasses event channel latency)
+        #[cfg(feature = "streaming")]
+        if self.is_native_streaming_active_for_playback() {
+          if let Some(ref player) = self.streaming_player {
+            player.set_volume(next_volume_u8);
+
+            // Update UI state immediately
+            if let Some(ctx) = &mut self.current_playback_context {
+              ctx.device.volume_percent = Some(next_volume_u8.into());
+            }
+            self.user_config.behavior.volume_percent = next_volume_u8;
+            let _ = self.user_config.save_config();
+            return;
+          }
+        }
+
+        // Fallback to API-based volume control for external devices
+        self.dispatch(IoEvent::ChangeVolume(next_volume_u8));
       }
     }
   }
@@ -905,7 +974,83 @@ impl App {
     self.api_error = e.to_string();
   }
 
+  /// Check if native streaming is the active playback device
+  /// Returns true only if the player is connected AND it's the currently active device
+  #[cfg(feature = "streaming")]
+  fn is_native_streaming_active_for_playback(&self) -> bool {
+    // Check if player exists and is connected
+    let player_connected = self
+      .streaming_player
+      .as_ref()
+      .is_some_and(|p| p.is_connected());
+
+    if !player_connected {
+      return false;
+    }
+
+    // Get native device name from player
+    let native_device_name = self
+      .streaming_player
+      .as_ref()
+      .map(|p| p.device_name().to_lowercase());
+
+    // If no context yet (e.g., at startup), use the app state flag which is
+    // set when the native streaming device is activated/selected.
+    let Some(ref ctx) = self.current_playback_context else {
+      return self.is_streaming_active;
+    };
+
+    // First, check if the current playback device matches the native streaming device ID
+    if let (Some(current_id), Some(native_id)) =
+      (ctx.device.id.as_ref(), self.native_device_id.as_ref())
+    {
+      if current_id == native_id {
+        return true;
+      }
+    }
+
+    // Fallback: strict name match (case-insensitive)
+    if let Some(native_name) = native_device_name.as_ref() {
+      let current_device_name = ctx.device.name.to_lowercase();
+      if current_device_name == native_name.as_str() {
+        return true;
+      }
+    }
+
+    // No match - not the active device
+    false
+  }
+
   pub fn toggle_playback(&mut self) {
+    // Use native streaming player for instant control (bypasses event channel latency)
+    #[cfg(feature = "streaming")]
+    if self.is_native_streaming_active_for_playback() {
+      if let Some(ref player) = self.streaming_player {
+        let is_playing = self
+          .native_is_playing
+          .or_else(|| self.current_playback_context.as_ref().map(|c| c.is_playing))
+          .unwrap_or(false);
+
+        if is_playing {
+          player.pause();
+          // Update UI state immediately
+          if let Some(ctx) = &mut self.current_playback_context {
+            ctx.is_playing = false;
+          }
+          self.native_is_playing = Some(false);
+        } else {
+          player.play();
+          // Update UI state immediately
+          if let Some(ctx) = &mut self.current_playback_context {
+            ctx.is_playing = true;
+          }
+          self.native_is_playing = Some(true);
+        }
+        return;
+      }
+    }
+
+    // Fallback to API-based playback control for external devices
     let is_playing = if self.is_streaming_active {
       self
         .native_is_playing
@@ -929,10 +1074,68 @@ impl App {
 
   pub fn previous_track(&mut self) {
     if self.song_progress_ms >= 3_000 {
+      // If more than 3 seconds into the song, restart from beginning
+      #[cfg(feature = "streaming")]
+      if self.is_native_streaming_active_for_playback() {
+        if let Some(ref player) = self.streaming_player {
+          player.seek(0);
+          self.song_progress_ms = 0;
+          self.seek_ms = None;
+          return;
+        }
+      }
+
+      // Fallback for external devices
       self.dispatch(IoEvent::Seek(0));
     } else {
+      // If less than 3 seconds in, go to previous track
+      #[cfg(feature = "streaming")]
+      if self.is_native_streaming_active_for_playback() {
+        if let Some(ref player) = self.streaming_player {
+          player.activate();
+          player.prev();
+          // Reset progress immediately for UI feedback
+          self.song_progress_ms = 0;
+          // librespot can occasionally land in a paused state after a skip.
+          // Schedule a short delayed resume to avoid racing the track transition.
+          let player = std::sync::Arc::clone(player);
+          std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            player.activate();
+            player.play();
+          });
+          return;
+        }
+      }
+
+      // Fallback for external devices
       self.dispatch(IoEvent::PreviousTrack);
     }
+  }
+
+  pub fn next_track(&mut self) {
+    // Use native streaming player for instant control (bypasses event channel latency)
+    #[cfg(feature = "streaming")]
+    if self.is_native_streaming_active_for_playback() {
+      if let Some(ref player) = self.streaming_player {
+        player.activate();
+        player.next();
+        // Reset progress immediately for UI feedback
+        self.song_progress_ms = 0;
+        // librespot can occasionally land in a paused state after a skip.
+        // Schedule a short delayed resume to avoid racing the track transition.
+        let player = std::sync::Arc::clone(player);
+        std::thread::spawn(move || {
+          std::thread::sleep(std::time::Duration::from_millis(300));
+          player.activate();
+          player.play();
+        });
+        return;
+      }
+    }
+
+    // Fallback for external devices
+    self.dispatch(IoEvent::NextTrack);
   }
 
   // The navigation_stack actually only controls the large block to the right of `library` and
@@ -1142,7 +1345,27 @@ impl App {
 
   pub fn shuffle(&mut self) {
     if let Some(context) = &self.current_playback_context.clone() {
-      self.dispatch(IoEvent::Shuffle(!context.shuffle_state));
+      let new_shuffle_state = !context.shuffle_state;
+
+      // Use native streaming player for instant control (bypasses event channel latency)
+      #[cfg(feature = "streaming")]
+      if self.is_native_streaming_active_for_playback() {
+        if let Some(ref player) = self.streaming_player {
+          // Try to set shuffle on the native player
+          let _ = player.set_shuffle(new_shuffle_state);
+
+          // Update UI state immediately
+          if let Some(ctx) = &mut self.current_playback_context {
+            ctx.shuffle_state = new_shuffle_state;
+          }
+          self.user_config.behavior.shuffle_enabled = new_shuffle_state;
+          let _ = self.user_config.save_config();
+          return;
+        }
+      }
+
+      // Fallback to API-based shuffle for external devices
+      self.dispatch(IoEvent::Shuffle(new_shuffle_state));
     };
   }
 
@@ -1463,7 +1686,34 @@ impl App {
 
   pub fn repeat(&mut self) {
     if let Some(context) = &self.current_playback_context.clone() {
-      self.dispatch(IoEvent::Repeat(context.repeat_state));
+      let current_repeat_state = context.repeat_state;
+
+      // Use native streaming player for instant control (bypasses event channel latency)
+      #[cfg(feature = "streaming")]
+      if self.is_native_streaming_active_for_playback() {
+        if let Some(ref player) = self.streaming_player {
+          use rspotify::model::enums::RepeatState;
+
+          // Try to set repeat on the native player (pass current state, not next)
+          let _ = player.set_repeat(current_repeat_state);
+
+          // Calculate next state for UI update
+          let next_repeat_state = match current_repeat_state {
+            RepeatState::Off => RepeatState::Context,
+            RepeatState::Context => RepeatState::Track,
+            RepeatState::Track => RepeatState::Off,
+          };
+
+          // Update UI state immediately
+          if let Some(ctx) = &mut self.current_playback_context {
+            ctx.repeat_state = next_repeat_state;
+          }
+          return;
+        }
+      }
+
+      // Fallback to API-based repeat for external devices
+      self.dispatch(IoEvent::Repeat(current_repeat_state));
     }
   }
 
