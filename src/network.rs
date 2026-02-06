@@ -354,11 +354,14 @@ impl Network {
           .transfert_playback_to_device(device_id, persist_device_id)
           .await;
       }
+      #[cfg(feature = "streaming")]
       IoEvent::AutoSelectStreamingDevice(device_name, persist_device_id) => {
         self
           .auto_select_streaming_device(device_name, persist_device_id)
           .await;
       }
+      #[cfg(not(feature = "streaming"))]
+      IoEvent::AutoSelectStreamingDevice(..) => {} // No-op without native streaming
       IoEvent::GetAlbumForTrack(track_id) => {
         self.get_album_for_track(track_id).await;
       }
@@ -510,6 +513,7 @@ impl Network {
     let mut app = self.app.lock().await;
 
     match context {
+      #[allow(unused_mut)]
       Ok(Some(mut c)) => {
         app.instant_since_last_current_playback_poll = Instant::now();
 
@@ -2707,6 +2711,7 @@ impl Network {
 
   /// Auto-select a streaming device by name (used for native spotatui streaming)
   /// This will retry a few times since the device may take a moment to appear in Spotify's device list
+  #[cfg(feature = "streaming")]
   async fn auto_select_streaming_device(&mut self, device_name: String, persist_device_id: bool) {
     // For native streaming, we use Spirc activation directly instead of the Web API's transfer_playback
     // The Web API returns 404 for native streaming devices because they use
