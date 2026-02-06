@@ -75,11 +75,13 @@ use std::{
   io::{self, stdout, Write},
   panic,
   path::PathBuf,
-  sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
-  },
-  time::{Duration, Instant, SystemTime},
+  sync::{atomic::AtomicU64, Arc},
+  time::SystemTime,
+};
+#[cfg(feature = "streaming")]
+use std::{
+  sync::atomic::Ordering,
+  time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
 use user_config::{UserConfig, UserConfigPaths};
@@ -1719,7 +1721,7 @@ async fn start_ui(
 async fn start_ui(
   user_config: UserConfig,
   app: &Arc<Mutex<App>>,
-  shared_position: Option<Arc<AtomicU64>>,
+  _shared_position: Option<Arc<AtomicU64>>,
   _mpris_manager: Option<()>,
   discord_rpc_manager: DiscordRpcHandle,
 ) -> Result<()> {
