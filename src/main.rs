@@ -1687,7 +1687,7 @@ async fn start_ui(
     // Check for updates async after first render to avoid blocking startup
     if !update_check_spawned {
       update_check_spawned = true;
-      let app_for_update = Arc::clone(&app);
+      let app_for_update = Arc::clone(app);
       tokio::spawn(async move {
         if let Some(update_info) = tokio::task::spawn_blocking(cli::check_for_update_silent)
           .await
