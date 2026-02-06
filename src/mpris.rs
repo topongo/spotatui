@@ -156,7 +156,6 @@ impl MprisManager {
               }
             }
 
-
             MprisCommand::PlaybackStatus(is_playing) => {
               let status = if is_playing {
                 PlaybackStatus::Playing
@@ -200,7 +199,14 @@ impl MprisManager {
   }
 
   /// Update track metadata
-pub fn set_metadata(&self, title: &str, artists: &[String], album: &str, duration_ms: u32, art_url: Option<String>) {
+  pub fn set_metadata(
+    &self,
+    title: &str,
+    artists: &[String],
+    album: &str,
+    duration_ms: u32,
+    art_url: Option<String>,
+  ) {
     let _ = self.command_tx.send(MprisCommand::Metadata {
       title: title.to_string(),
       artists: artists.to_vec(),
