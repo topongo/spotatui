@@ -456,6 +456,16 @@ pub struct App {
   pub small_search_limit: u32,
   pub song_progress_ms: u128,
   pub seek_ms: Option<u128>,
+  /// Last time a native seek was actually sent to the player (for throttling)
+  #[cfg(feature = "streaming")]
+  pub last_native_seek: Option<Instant>,
+  /// Pending seek position to send to player (throttled to avoid overwhelming librespot)
+  #[cfg(feature = "streaming")]
+  pub pending_native_seek: Option<u32>,
+  /// Last time an API seek was sent (for throttling external device control)
+  pub last_api_seek: Option<Instant>,
+  /// Pending seek position for API (throttled to avoid overwhelming Spotify API)
+  pub pending_api_seek: Option<u32>,
   pub track_table: TrackTable,
   pub episode_table_context: EpisodeTableContext,
   pub selected_show_simplified: Option<SelectedShow>,
@@ -533,6 +543,9 @@ pub struct App {
   /// Reference to the native streaming player for direct control (bypasses event channel)
   #[cfg(feature = "streaming")]
   pub streaming_player: Option<Arc<crate::player::StreamingPlayer>>,
+  /// Reference to MPRIS manager for emitting Seeked signals after native seeks
+  #[cfg(all(feature = "mpris", target_os = "linux"))]
+  pub mpris_manager: Option<Arc<crate::mpris::MprisManager>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -609,6 +622,12 @@ impl Default for App {
       },
       song_progress_ms: 0,
       seek_ms: None,
+      #[cfg(feature = "streaming")]
+      last_native_seek: None,
+      #[cfg(feature = "streaming")]
+      pending_native_seek: None,
+      last_api_seek: None,
+      pending_api_seek: None,
       selected_device_index: None,
       selected_playlist_index: None,
       active_playlist_index: None,
@@ -660,6 +679,8 @@ impl Default for App {
       pending_track_table_selection: None,
       #[cfg(feature = "streaming")]
       streaming_player: None,
+      #[cfg(all(feature = "mpris", target_os = "linux"))]
+      mpris_manager: None,
     }
   }
 }
@@ -784,6 +805,16 @@ impl App {
         .elapsed()
         .as_millis();
 
+      // Skip position updates if we recently seeked (let UI show our target position)
+      const SEEK_IGNORE_MS: u128 = 500;
+      let recently_seeked = self
+        .last_api_seek
+        .is_some_and(|t| t.elapsed().as_millis() < SEEK_IGNORE_MS);
+
+      if recently_seeked {
+        return; // Don't overwrite our seek target
+      }
+
       // Resync from fresh API data (within 300ms of poll) to correct drift
       if ms_since_poll < 300 {
         self.song_progress_ms = progress
@@ -828,18 +859,30 @@ impl App {
 
       // Use native streaming player for instant control (bypasses event channel latency)
       #[cfg(feature = "streaming")]
-      if self.is_streaming_active {
-        if let Some(ref player) = self.streaming_player {
-          player.seek(new_progress);
-          // Update UI state immediately
+      if self.is_native_streaming_active_for_playback() {
+        if self.streaming_player.is_some() {
+          // Always update UI immediately
           self.song_progress_ms = new_progress as u128;
           self.seek_ms = None;
+
+          // Throttle actual seeks to avoid overwhelming librespot (max ~20/sec)
+          const SEEK_THROTTLE_MS: u128 = 50;
+          let should_seek_now = self
+            .last_native_seek
+            .is_none_or(|t| t.elapsed().as_millis() >= SEEK_THROTTLE_MS);
+
+          if should_seek_now {
+            self.execute_native_seek(new_progress);
+          } else {
+            // Queue the seek - will be flushed by tick loop or next seek
+            self.pending_native_seek = Some(new_progress);
+          }
           return;
         }
       }
 
-      // Fallback: Dispatch the seek immediately for external devices
-      self.apply_seek(new_progress);
+      // Fallback: API-based seek for external devices (with throttling)
+      self.queue_api_seek(new_progress);
     }
   }
 
@@ -855,17 +898,107 @@ impl App {
     // Use native streaming player for instant control (bypasses event channel latency)
     #[cfg(feature = "streaming")]
     if self.is_native_streaming_active_for_playback() {
-      if let Some(ref player) = self.streaming_player {
-        player.seek(new_progress);
-        // Update UI state immediately
+      if self.streaming_player.is_some() {
+        // Always update UI immediately
         self.song_progress_ms = new_progress as u128;
         self.seek_ms = None;
+
+        // Throttle actual seeks to avoid overwhelming librespot (max ~20/sec)
+        const SEEK_THROTTLE_MS: u128 = 50;
+        let should_seek_now = self
+          .last_native_seek
+          .is_none_or(|t| t.elapsed().as_millis() >= SEEK_THROTTLE_MS);
+
+        if should_seek_now {
+          self.execute_native_seek(new_progress);
+        } else {
+          // Queue the seek - will be flushed by tick loop or next seek
+          self.pending_native_seek = Some(new_progress);
+        }
         return;
       }
     }
 
-    // Fallback: Dispatch the seek immediately for external devices
-    self.dispatch(IoEvent::Seek(new_progress));
+    // Fallback: API-based seek for external devices (with throttling)
+    self.queue_api_seek(new_progress);
+  }
+
+  /// Queue an API-based seek with throttling (for external device control)
+  fn queue_api_seek(&mut self, position_ms: u32) {
+    // Always update UI immediately
+    self.song_progress_ms = position_ms as u128;
+    self.seek_ms = None;
+
+    // Mark current poll data as stale so it won't override our target after ignore window
+    // By setting this to now, when the 500ms ignore window expires, the poll data
+    // will be >500ms old (>300ms threshold), so resync won't happen
+    self.instant_since_last_current_playback_poll = Instant::now();
+
+    // Throttle API calls more aggressively (max ~5/sec to respect rate limits)
+    const API_SEEK_THROTTLE_MS: u128 = 200;
+    let should_seek_now = self
+      .last_api_seek
+      .is_none_or(|t| t.elapsed().as_millis() >= API_SEEK_THROTTLE_MS);
+
+    if should_seek_now {
+      self.execute_api_seek(position_ms);
+    } else {
+      // Queue the seek - will be flushed by tick loop
+      self.pending_api_seek = Some(position_ms);
+    }
+  }
+
+  /// Execute an API-based seek
+  fn execute_api_seek(&mut self, position_ms: u32) {
+    self.last_api_seek = Some(Instant::now());
+    self.pending_api_seek = None;
+    self.apply_seek(position_ms);
+  }
+
+  /// Flush any pending API seek (called from tick loop)
+  pub fn flush_pending_api_seek(&mut self) {
+    if let Some(position) = self.pending_api_seek {
+      const API_SEEK_THROTTLE_MS: u128 = 200;
+      let should_flush = self
+        .last_api_seek
+        .is_none_or(|t| t.elapsed().as_millis() >= API_SEEK_THROTTLE_MS);
+
+      if should_flush {
+        self.execute_api_seek(position);
+      }
+    }
+  }
+
+  /// Execute a native seek and update tracking state
+  #[cfg(feature = "streaming")]
+  fn execute_native_seek(&mut self, position_ms: u32) {
+    if let Some(ref player) = self.streaming_player {
+      player.seek(position_ms);
+      self.last_native_seek = Some(Instant::now());
+      self.pending_native_seek = None;
+
+      // Notify MPRIS clients that position jumped
+      #[cfg(all(feature = "mpris", target_os = "linux"))]
+      if let Some(ref mpris) = self.mpris_manager {
+        mpris.emit_seeked(position_ms as u64);
+      }
+    }
+  }
+
+  /// Flush any pending native seek (called from tick loop)
+  #[cfg(feature = "streaming")]
+  pub fn flush_pending_native_seek(&mut self) {
+    if let Some(position) = self.pending_native_seek {
+      // Only flush if enough time has passed since last seek
+      const SEEK_THROTTLE_MS: u128 = 50;
+      let should_flush = self
+        .last_native_seek
+        .is_none_or(|t| t.elapsed().as_millis() >= SEEK_THROTTLE_MS);
+
+      if should_flush {
+        self.execute_native_seek(position);
+      }
+    }
   }
 
   pub fn get_recommendations_for_seed(
@@ -1360,6 +1493,12 @@ impl App {
           }
           self.user_config.behavior.shuffle_enabled = new_shuffle_state;
           let _ = self.user_config.save_config();
+
+          // Notify MPRIS clients of the change
+          #[cfg(all(feature = "mpris", target_os = "linux"))]
+          if let Some(ref mpris) = self.mpris_manager {
+            mpris.set_shuffle(new_shuffle_state);
+          }
           return;
         }
       }
@@ -1707,6 +1846,18 @@ impl App {
           // Update UI state immediately
           if let Some(ctx) = &mut self.current_playback_context {
             ctx.repeat_state = next_repeat_state;
+          }
+
+          // Notify MPRIS clients of the change
+          #[cfg(all(feature = "mpris", target_os = "linux"))]
+          if let Some(ref mpris) = self.mpris_manager {
+            use crate::mpris::LoopStatusEvent;
+            let loop_status = match next_repeat_state {
+              RepeatState::Off => LoopStatusEvent::None,
+              RepeatState::Context => LoopStatusEvent::Playlist,
+              RepeatState::Track => LoopStatusEvent::Track,
+            };
+            mpris.set_loop_status(loop_status);
           }
           return;
         }
