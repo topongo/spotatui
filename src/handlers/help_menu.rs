@@ -99,7 +99,7 @@ mod tests {
     // Close help menu with 'q' (simulating the back key handling in main.rs)
     let back_key = app.user_config.keys.back;
     assert_eq!(back_key, Key::Char('q'));
-    
+
     let pop_result = app.pop_navigation_stack();
     assert!(pop_result.is_some());
     assert_eq!(app.get_current_route().id, RouteId::Home);
