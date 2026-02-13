@@ -542,6 +542,12 @@ of the app. Beware that this comes at a CPU cost!",
         .help("Specify configuration file path."),
     )
     .arg(
+      Arg::new("reconfigure-auth")
+        .long("reconfigure-auth")
+        .action(clap::ArgAction::SetTrue)
+        .help("Rerun client authentication setup wizard"),
+    )
+    .arg(
       Arg::new("completions")
         .long("completions")
         .help("Generates completions for your preferred shell")
@@ -611,6 +617,35 @@ of the app. Beware that this comes at a CPU cost!",
 
   let mut client_config = ClientConfig::new();
   client_config.load_config()?;
+
+  let reconfigure_auth = matches.get_flag("reconfigure-auth");
+
+  if reconfigure_auth {
+    println!("\nReconfiguring client authentication...");
+    client_config.reconfigure_auth()?;
+    println!("Client authentication setup updated.\n");
+  } else if matches.subcommand_name().is_none() && client_config.needs_auth_setup_migration() {
+    println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("Authentication Setup Update");
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!(
+      "\nConfiguration handling has changed and your authentication setup may need an update."
+    );
+    println!("Would you like to run the new auth setup wizard now? (Y/n): ");
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim().to_lowercase();
+    let run_migration = input.is_empty() || input == "y" || input == "yes";
+
+    if run_migration {
+      client_config.reconfigure_auth()?;
+      println!("Client authentication setup updated.\n");
+    } else {
+      client_config.mark_auth_setup_migrated()?;
+      println!("Skipped. You can run this anytime with `spotatui --reconfigure-auth`.\n");
+    }
+  }
 
   // Prompt for global song count opt-in if missing (only for interactive TUI, not CLI)
   // Keep this after client setup so first-run UX asks for auth mode first.

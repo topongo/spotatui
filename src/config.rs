@@ -14,6 +14,7 @@ const APP_CONFIG_DIR: &str = "spotatui";
 const TOKEN_CACHE_FILE: &str = ".spotify_token_cache.json";
 const GITIGNORE_FILE: &str = ".gitignore";
 pub const NCSPOT_CLIENT_ID: &str = "d420a117a32841c2b3474932e49fb54b";
+const AUTH_SETUP_VERSION: u8 = 2;
 
 #[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ClientConfig {
@@ -22,6 +23,8 @@ pub struct ClientConfig {
   pub fallback_client_id: Option<String>,
   #[serde(default)]
   pub client_secret: String,
+  #[serde(default)]
+  pub setup_version: u8,
   pub device_id: Option<String>,
   // FIXME: port should be defined in `user_config` not in here
   pub port: Option<u16>,
@@ -59,6 +62,7 @@ impl ClientConfig {
       client_id: "".to_string(),
       fallback_client_id: None,
       client_secret: "".to_string(),
+      setup_version: 0,
       device_id: None,
       port: None,
       enable_streaming: default_streaming_enabled(),
@@ -147,6 +151,7 @@ impl ClientConfig {
       self.client_id = config_yml.client_id;
       self.fallback_client_id = config_yml.fallback_client_id;
       self.client_secret = config_yml.client_secret;
+      self.setup_version = config_yml.setup_version;
       self.device_id = config_yml.device_id;
       self.port = config_yml.port;
       self.enable_streaming = config_yml.enable_streaming;
@@ -163,79 +168,86 @@ impl ClientConfig {
         paths.config_file_path.display()
       );
 
-      println!("\nClient setup options:\n");
-      println!(
-        "  1) Use ncspot client ID (quick setup, may break if Spotify revokes shared access)"
-      );
-      println!("  2) Use ncspot client ID + your own fallback app ID (recommended for resilience)");
-
-      let setup_option = ClientConfig::get_setup_option()?;
-
-      let (client_id, fallback_client_id) = match setup_option {
-        1 => {
-          println!("\nUsing ncspot redirect URI: http://127.0.0.1:8989/login");
-          (NCSPOT_CLIENT_ID.to_string(), None)
-        }
-        2 => {
-          println!("\nCreate your fallback Spotify app:\n");
-          let instructions = [
-            "Go to https://developer.spotify.com/dashboard/applications",
-            "Click `Create app` and add your own name and description",
-            &format!(
-              "Add `http://127.0.0.1:{}/callback` to Redirect URIs",
-              DEFAULT_PORT
-            ),
-          ];
-
-          let mut number = 1;
-          for item in instructions.iter() {
-            println!("  {}. {}", number, item);
-            number += 1;
-          }
-
-          let fallback = ClientConfig::get_client_key_from_input("Fallback Client ID")?;
-          (NCSPOT_CLIENT_ID.to_string(), Some(fallback))
-        }
-        _ => unreachable!(),
-      };
-
-      let port = if setup_option == 1 {
-        8989
-      } else {
-        let mut port = String::new();
-        println!(
-          "\nEnter port of fallback redirect uri (default {}): ",
-          DEFAULT_PORT
-        );
-        stdin().read_line(&mut port)?;
-        port.trim().parse::<u16>().unwrap_or(DEFAULT_PORT)
-      };
-
-      let config_yml = ClientConfig {
-        client_id,
-        fallback_client_id,
-        client_secret: String::new(),
-        device_id: None,
-        port: Some(port),
-        enable_streaming: default_streaming_enabled(),
-        streaming_device_name: default_device_name(),
-        streaming_bitrate: default_bitrate(),
-        streaming_audio_cache: false,
-      };
-
-      let content_yml = serde_yaml::to_string(&config_yml)?;
-
-      let mut new_config = fs::File::create(&paths.config_file_path)?;
-      write!(new_config, "{}", content_yml)?;
-
-      self.client_id = config_yml.client_id;
-      self.fallback_client_id = config_yml.fallback_client_id;
-      self.client_secret = config_yml.client_secret;
-      self.device_id = config_yml.device_id;
-      self.port = config_yml.port;
-
-      Ok(())
+      self.run_auth_setup_wizard()
     }
+  }
+
+  pub fn needs_auth_setup_migration(&self) -> bool {
+    self.setup_version < AUTH_SETUP_VERSION
+  }
+
+  pub fn reconfigure_auth(&mut self) -> Result<()> {
+    self.run_auth_setup_wizard()
+  }
+
+  pub fn mark_auth_setup_migrated(&mut self) -> Result<()> {
+    self.setup_version = AUTH_SETUP_VERSION;
+    self.save_config_file()
+  }
+
+  fn run_auth_setup_wizard(&mut self) -> Result<()> {
+    println!("\nClient setup options:\n");
+    println!("  1) Use ncspot client ID (quick setup, may break if Spotify revokes shared access)");
+    println!("  2) Use ncspot client ID + your own fallback app ID (recommended for resilience)");
+
+    let setup_option = ClientConfig::get_setup_option()?;
+
+    let (client_id, fallback_client_id) = match setup_option {
+      1 => {
+        println!("\nUsing ncspot redirect URI: http://127.0.0.1:8989/login");
+        (NCSPOT_CLIENT_ID.to_string(), None)
+      }
+      2 => {
+        println!("\nCreate your fallback Spotify app:\n");
+        let instructions = [
+          "Go to https://developer.spotify.com/dashboard/applications",
+          "Click `Create app` and add your own name and description",
+          &format!(
+            "Add `http://127.0.0.1:{}/callback` to Redirect URIs",
+            DEFAULT_PORT
+          ),
+        ];
+
+        let mut number = 1;
+        for item in instructions.iter() {
+          println!("  {}. {}", number, item);
+          number += 1;
+        }
+
+        let fallback = ClientConfig::get_client_key_from_input("Fallback Client ID")?;
+        (NCSPOT_CLIENT_ID.to_string(), Some(fallback))
+      }
+      _ => unreachable!(),
+    };
+
+    let port = if setup_option == 1 {
+      8989
+    } else {
+      let mut port = String::new();
+      println!(
+        "\nEnter port of fallback redirect uri (default {}): ",
+        DEFAULT_PORT
+      );
+      stdin().read_line(&mut port)?;
+      port.trim().parse::<u16>().unwrap_or(DEFAULT_PORT)
+    };
+
+    self.client_id = client_id;
+    self.fallback_client_id = fallback_client_id;
+    self.client_secret = String::new();
+    self.port = Some(port);
+    self.setup_version = AUTH_SETUP_VERSION;
+
+    self.save_config_file()
+  }
+
+  fn save_config_file(&self) -> Result<()> {
+    let paths = self.get_or_build_paths()?;
+    let content_yml = serde_yaml::to_string(self)?;
+
+    let mut config_file = fs::File::create(&paths.config_file_path)?;
+    write!(config_file, "{}", content_yml)?;
+    Ok(())
   }
 
   fn get_client_key_from_input(type_label: &'static str) -> Result<String> {
