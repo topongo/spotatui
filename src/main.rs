@@ -402,7 +402,7 @@ async fn ensure_auth_token(
   token_cache_path: &PathBuf,
   auth_port: u16,
 ) -> Result<()> {
-  let needs_auth = match load_token_from_file(spotify, token_cache_path).await {
+  let mut needs_auth = match load_token_from_file(spotify, token_cache_path).await {
     Ok(true) => false,
     Ok(false) => {
       println!("No cached token found, need to authenticate");
@@ -413,6 +413,35 @@ async fn ensure_auth_token(
       true
     }
   };
+
+  if !needs_auth {
+    if let Err(e) = spotify.me().await {
+      let err_text = e.to_string();
+      let err_text_lower = err_text.to_lowercase();
+      let should_reauth = err_text_lower.contains("401")
+        || err_text_lower.contains("unauthorized")
+        || err_text_lower.contains("status code 400")
+        || err_text_lower.contains("invalid_grant")
+        || err_text_lower.contains("access token expired")
+        || err_text_lower.contains("token expired");
+
+      if should_reauth {
+        println!("Cached token is no longer valid. Re-authentication required.");
+        if token_cache_path.exists() {
+          if let Err(remove_err) = fs::remove_file(token_cache_path) {
+            println!(
+              "Failed to remove stale token cache {}: {}",
+              token_cache_path.display(),
+              remove_err
+            );
+          }
+        }
+        needs_auth = true;
+      } else {
+        return Err(anyhow!(e));
+      }
+    }
+  }
 
   if needs_auth {
     let auth_url = spotify.get_authorize_url(None)?;
@@ -747,28 +776,17 @@ of the app. Beware that this comes at a CPU cost!",
 
     match auth_result {
       Ok(()) => {
-        if let Err(e) = candidate.me().await {
-          last_auth_error = Some(anyhow!(e));
-          if index + 1 < client_candidates.len() {
-            println!(
-              "Authentication with client {} failed after token setup, trying fallback client...",
-              client_id
-            );
-            continue;
-          }
+        if *client_id == NCSPOT_CLIENT_ID {
+          println!(
+            "Using ncspot shared client ID. If it breaks in the future, configure fallback_client_id in client.yml."
+          );
         } else {
-          if *client_id == NCSPOT_CLIENT_ID {
-            println!(
-              "Using ncspot shared client ID. If it breaks in the future, configure fallback_client_id in client.yml."
-            );
-          } else {
-            println!("Using fallback client ID {}", client_id);
-          }
-          client_config.client_id = client_id.clone();
-          selected_redirect_uri = redirect_uri;
-          spotify = Some(candidate);
-          break;
+          println!("Using fallback client ID {}", client_id);
         }
+        client_config.client_id = client_id.clone();
+        selected_redirect_uri = redirect_uri;
+        spotify = Some(candidate);
+        break;
       }
       Err(e) => {
         last_auth_error = Some(e);

@@ -506,14 +506,6 @@ impl Network {
     query: &[(&str, String)],
     body: Option<Value>,
   ) -> anyhow::Result<Value> {
-    let access_token = {
-      let token_lock = spotify.token.lock().await.expect("Failed to lock token");
-      token_lock
-        .as_ref()
-        .map(|t| t.access_token.clone())
-        .ok_or_else(|| anyhow!("No access token available"))?
-    };
-
     let mut url = reqwest::Url::parse("https://api.spotify.com/v1/")?.join(path)?;
     if !query.is_empty() {
       let mut qp = url.query_pairs_mut();
@@ -525,8 +517,17 @@ impl Network {
     let client = reqwest::Client::new();
     let mut attempt: u8 = 0;
     let max_attempts: u8 = 4;
+    let mut refreshed_after_unauthorized = false;
 
     loop {
+      let access_token = {
+        let token_lock = spotify.token.lock().await.expect("Failed to lock token");
+        token_lock
+          .as_ref()
+          .map(|t| t.access_token.clone())
+          .ok_or_else(|| anyhow!("No access token available"))?
+      };
+
       Self::pace_spotify_api_call().await;
 
       let mut request = client
@@ -559,6 +560,25 @@ impl Network {
       }
 
       let status = response.status();
+
+      if status == reqwest::StatusCode::UNAUTHORIZED && !refreshed_after_unauthorized {
+        match spotify.refresh_token().await {
+          Ok(_) => {
+            refreshed_after_unauthorized = true;
+            continue;
+          }
+          Err(refresh_err) => {
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow!(
+              "Spotify API {} failed: {} (token refresh failed: {})",
+              status,
+              body,
+              refresh_err
+            ));
+          }
+        }
+      }
+
       if status == reqwest::StatusCode::TOO_MANY_REQUESTS && attempt + 1 < max_attempts {
         let retry_after_secs = response
           .headers()

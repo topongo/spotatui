@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.36.1] - 2026-02-14
+
+### Fixed
+
+- **Expired Token Startup Loop**: Startup now validates cached auth tokens and forces a clean re-auth only when the cache is stale/invalid, preventing repeated `status code 400 Bad Request` failures on launch.
+- **Recurring 401 Error Modal**: Direct Spotify API calls now refresh the access token on `401 Unauthorized` and retry, preventing the error screen from immediately reappearing after dismissal when a token expires mid-session.
+- **Windows Compilation Regression**: Fixed the Windows build break introduced in `0.36.0` ([#97](https://github.com/LargeModGames/spotatui/pull/97)).
+
 ## [0.36.0] - 2026-02-13
 
 ### Added
