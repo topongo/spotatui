@@ -1,6 +1,12 @@
 # Changelog
 
-## [0.36.2]
+## [0.36.3-debug.1] - 2026-02-16
+
+### Added
+
+- **Session Log File for Runtime Diagnostics**: spotatui now writes runtime logs to `/tmp/spotatui_logs/spotatuilog{PID}` so testers can tail logs while reproducing issue #96 ([#102](https://github.com/LargeModGames/spotatui/pull/102)).
+
+## [0.36.2] - 2026-02-15
 
 ### Added
 
