@@ -1448,7 +1448,10 @@ impl App {
           .native_is_playing
           .or_else(|| self.current_playback_context.as_ref().map(|c| c.is_playing))
           .unwrap_or(false);
-
+        info!(
+          "toggling playback: {}",
+          if is_playing { "paused" } else { "playing" }
+        );
         if is_playing {
           player.pause();
           // Update UI state immediately

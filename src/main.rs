@@ -567,7 +567,7 @@ fn setup_logging() -> anyhow::Result<()> {
 
   // Construct the log file path using the PID
   let log_dir = "/tmp/spotatui_logs/";
-  let log_path = format!("{}/spotatuilog{}", log_dir, pid);
+  let log_path = format!("{}spotatuilog{}", log_dir, pid);
 
   // Ensure the directory exists. If not, create.
   if !std::path::Path::new(log_dir).exists() {
@@ -881,11 +881,11 @@ of the app. Beware that this comes at a CPU cost!",
     match auth_result {
       Ok(()) => {
         if *client_id == NCSPOT_CLIENT_ID {
-          println!(
+          info!(
             "Using ncspot shared client ID. If it breaks in the future, configure fallback_client_id in client.yml."
           );
         } else {
-          println!("Using fallback client ID {}", client_id);
+          info!("Using fallback client ID {}", client_id);
         }
         client_config.client_id = client_id.clone();
         selected_redirect_uri = redirect_uri;
@@ -895,7 +895,7 @@ of the app. Beware that this comes at a CPU cost!",
       Err(e) => {
         last_auth_error = Some(e);
         if index + 1 < client_candidates.len() {
-          println!(
+          info!(
             "Authentication with client {} failed, trying fallback client...",
             client_id
           );
