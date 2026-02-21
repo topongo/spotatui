@@ -966,13 +966,10 @@ pub fn draw_song_table(f: &mut Frame<'_>, app: &App, layout_chunk: Rect) {
 pub fn draw_basic_view(f: &mut Frame<'_>, app: &App) {
   let chunks = Layout::default()
     .direction(Direction::Vertical)
-    .constraints(
-      [
-        Constraint::Min(0), // Lyrics Area taking all available space above
-        Constraint::Length(BASIC_VIEW_HEIGHT), // Playbar at the bottom
-      ]
-      .as_ref(),
-    )
+    .constraints([
+      Constraint::Min(0), // Lyrics Area taking all available space above
+      Constraint::Length(BASIC_VIEW_HEIGHT), // Playbar at the bottom
+    ])
     .split(f.area());
 
   draw_lyrics(f, app, chunks[0]);
@@ -1079,6 +1076,41 @@ fn draw_lyrics(f: &mut Frame<'_>, app: &App, area: Rect) {
 }
 
 pub fn draw_playbar(f: &mut Frame<'_>, app: &App, layout_chunk: Rect) {
+  #[cfg(feature = "cover-art")]
+  let (artist_area, progress_area, cover_art) = {
+    // first create margins
+    let [other] = layout_chunk.layout(&Layout::horizontal([Constraint::Fill(1)]).margin(1));
+
+    let (other, album_art) = if app.cover_art.available() {
+      let height = other.height;
+      // we need to allocate a square portion of layout_chunk, but terminal characters aren't
+      // square!
+
+      // totally arbitrary
+      let ratio = 1.9;
+      // we ceil rather than simply casting for using the full height of the area
+      let width = ((height as f32) * ratio).ceil() as u16;
+      let [cover_art, _, other] = other.layout(&Layout::horizontal([
+        Constraint::Length(width),
+        Constraint::Length(1),
+        Constraint::Percentage(100),
+      ]));
+
+      (other, Some(cover_art))
+    } else {
+      (other, None)
+    };
+
+    let [artist_area, _, progress_area] = other.layout(&Layout::vertical([
+      Constraint::Percentage(50),
+      Constraint::Percentage(25),
+      Constraint::Percentage(25),
+    ]));
+
+    (artist_area, progress_area, album_art)
+  };
+
+  #[cfg(not(feature = "cover-art"))]
   let [artist_area, _, progress_area] = layout_chunk.layout(
     &Layout::vertical([
       Constraint::Percentage(50),
@@ -1270,6 +1302,11 @@ pub fn draw_playbar(f: &mut Frame<'_>, app: &App, layout_chunk: Rect) {
         f.render_widget(canvas, layout_chunk);
       }
 
+      #[cfg(feature = "cover-art")]
+      if let Some(cover_art) = cover_art {
+        app.cover_art.render(f, cover_art);
+      }
+
       drew_playbar = true;
     }
   }
@@ -1293,7 +1330,7 @@ pub fn draw_playbar(f: &mut Frame<'_>, app: &App, layout_chunk: Rect) {
 pub fn draw_error_screen(f: &mut Frame<'_>, app: &App) {
   let chunks = Layout::default()
     .direction(Direction::Vertical)
-    .constraints([Constraint::Percentage(100)].as_ref())
+    .constraints([Constraint::Percentage(100)])
     .margin(5)
     .split(f.area());
 
@@ -2424,7 +2461,7 @@ fn draw_confirmation_dialog(
   let vchunks = Layout::default()
     .direction(Direction::Vertical)
     .margin(1)
-    .constraints([Constraint::Min(3), Constraint::Length(3)].as_ref())
+    .constraints([Constraint::Min(3), Constraint::Length(3)])
     .split(rect);
 
   let text = Paragraph::new(text)
@@ -2436,7 +2473,7 @@ fn draw_confirmation_dialog(
   let hchunks = Layout::default()
     .direction(Direction::Horizontal)
     .horizontal_margin(3)
-    .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)].as_ref())
+    .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
     .split(vchunks[1]);
 
   let ok = Paragraph::new(Span::raw("Ok"))

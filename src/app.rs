@@ -504,6 +504,8 @@ pub struct App {
   pub current_playback_context: Option<CurrentPlaybackContext>,
   pub last_track_id: Option<String>,
   pub devices: Option<DevicePayload>,
+  #[cfg(feature = "cover-art")]
+  pub cover_art: crate::cover_art::CoverArt,
   // Inputs:
   // input is the string for input;
   // input_idx is the index of the cursor in terms of character;
@@ -800,6 +802,8 @@ impl Default for App {
       streaming_player: None,
       #[cfg(all(feature = "mpris", target_os = "linux"))]
       mpris_manager: None,
+      #[cfg(feature = "cover-art")]
+      cover_art: crate::cover_art::CoverArt::new(),
     }
   }
 }

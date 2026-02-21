@@ -30,6 +30,8 @@ mod audio;
 mod banner;
 mod cli;
 mod config;
+#[cfg(feature = "cover-art")]
+mod cover_art;
 #[cfg(feature = "discord-rpc")]
 mod discord_rpc;
 mod event;
