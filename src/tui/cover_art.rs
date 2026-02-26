@@ -42,8 +42,8 @@ impl CoverArt {
 
   pub fn full_image_support(&self) -> bool {
     match self.picker.protocol_type() {
-      ProtocolType::Kitty | ProtocolType::Iterm2 => true,
-      ProtocolType::Sixel | ProtocolType::Halfblocks => false,
+      ProtocolType::Kitty | ProtocolType::Iterm2 | ProtocolType::Sixel => true,
+      ProtocolType::Halfblocks => false,
     }
   }
 
