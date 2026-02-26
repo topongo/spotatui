@@ -2331,6 +2331,18 @@ impl App {
           description: "Icon for paused state".to_string(),
           value: SettingValue::String(self.user_config.behavior.paused_icon.clone()),
         },
+        SettingItem {
+          id: "behavior.draw_cover_art".to_string(),
+          name: "Draw Cover Art".to_string(),
+          description: "Enable rendering song/episode cover art".to_string(),
+          value: SettingValue::Bool(self.user_config.behavior.draw_cover_art),
+        },
+        SettingItem {
+          id: "behavior.draw_cover_art_forced".to_string(),
+          name: "Force Draw Cover Art".to_string(),
+          description: "Force rendering of cover art despite terminal support".to_string(),
+          value: SettingValue::Bool(self.user_config.behavior.draw_cover_art_forced),
+        },
       ],
       SettingsCategory::Keybindings => vec![
         SettingItem {
@@ -2666,6 +2678,16 @@ impl App {
         "behavior.paused_icon" => {
           if let SettingValue::String(v) = &setting.value {
             self.user_config.behavior.paused_icon = v.clone();
+          }
+        }
+        "behavior.draw_cover_art" => {
+          if let SettingValue::Bool(v) = setting.value {
+            self.user_config.behavior.draw_cover_art = v;
+          }
+        }
+        "behavior.draw_cover_art_forced" => {
+          if let SettingValue::Bool(v) = setting.value {
+            self.user_config.behavior.draw_cover_art_forced = v;
           }
         }
         // Keybindings

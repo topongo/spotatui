@@ -216,17 +216,22 @@ impl PlaybackNetwork for Network {
 
         // Get album/episode cover art
         #[cfg(feature = "cover-art")]
-        if let Some(playable) = &c.item {
-          let image = match playable {
-            PlayableItem::Track(t) => t.album.images.first(),
-            PlayableItem::Episode(e) => e.images.first(),
-          };
+        if app
+          .user_config
+          .do_draw_cover_art(app.cover_art.full_image_support())
+        {
+          if let Some(playable) = &c.item {
+            let image = match playable {
+              PlayableItem::Track(t) => t.album.images.first(),
+              PlayableItem::Episode(e) => e.images.first(),
+            };
 
-          if let Some(image) = image {
-            if let anyhow::Result::Err(err) = app.cover_art.refresh(image).await {
-              drop(app);
-              self.handle_error(err).await;
-              return;
+            if let Some(image) = image {
+              if let anyhow::Result::Err(err) = app.cover_art.refresh(image).await {
+                drop(app);
+                self.handle_error(err).await;
+                return;
+              }
             }
           }
         }

@@ -30,7 +30,10 @@ impl CoverArt {
   pub fn new() -> Self {
     let picker = Picker::from_query_stdio().unwrap();
 
-    info!("cover art rendered detected a {:?} backend", picker.protocol_type());
+    info!(
+      "cover art rendered detected a {:?} backend",
+      picker.protocol_type()
+    );
     Self {
       picker,
       state: Mutex::new(None),

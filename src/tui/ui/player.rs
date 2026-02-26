@@ -136,22 +136,29 @@ pub fn draw_playbar(f: &mut Frame<'_>, app: &App, layout_chunk: Rect) {
     // first create margins
     let [other] = layout_chunk.layout(&Layout::horizontal([Constraint::Fill(1)]).margin(1));
 
-    let (other, album_art) = if app.cover_art.available() {
-      let height = other.height;
-      // we need to allocate a square portion of layout_chunk, but terminal characters aren't
-      // square!
+    let (other, cover_art) = if app
+      .user_config
+      .do_draw_cover_art(app.cover_art.full_image_support())
+    {
+      if app.cover_art.available() {
+        let height = other.height;
+        // we need to allocate a square portion of layout_chunk, but terminal characters aren't
+        // square!
 
-      // totally arbitrary
-      let ratio = 1.9;
-      // we ceil rather than simply casting for using the full height of the area
-      let width = ((height as f32) * ratio).ceil() as u16;
-      let [cover_art, _, other] = other.layout(&Layout::horizontal([
-        Constraint::Length(width),
-        Constraint::Length(1),
-        Constraint::Percentage(100),
-      ]));
+        // totally arbitrary
+        let ratio = 1.9;
+        // we ceil rather than simply casting for using the full height of the area
+        let width = ((height as f32) * ratio).ceil() as u16;
+        let [cover_art, _, other] = other.layout(&Layout::horizontal([
+          Constraint::Length(width),
+          Constraint::Length(1),
+          Constraint::Percentage(100),
+        ]));
 
-      (other, Some(cover_art))
+        (other, Some(cover_art))
+      } else {
+        (other, None)
+      }
     } else {
       (other, None)
     };
@@ -162,7 +169,7 @@ pub fn draw_playbar(f: &mut Frame<'_>, app: &App, layout_chunk: Rect) {
       Constraint::Percentage(25),
     ]));
 
-    (artist_area, progress_area, album_art)
+    (artist_area, progress_area, cover_art)
   };
 
   #[cfg(not(feature = "cover-art"))]
@@ -358,8 +365,13 @@ pub fn draw_playbar(f: &mut Frame<'_>, app: &App, layout_chunk: Rect) {
       }
 
       #[cfg(feature = "cover-art")]
-      if let Some(cover_art) = cover_art {
-        app.cover_art.render(f, cover_art);
+      if app
+        .user_config
+        .do_draw_cover_art(app.cover_art.full_image_support())
+      {
+        if let Some(cover_art) = cover_art {
+          app.cover_art.render(f, cover_art);
+        }
       }
 
       drew_playbar = true;
