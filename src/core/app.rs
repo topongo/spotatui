@@ -2331,12 +2331,14 @@ impl App {
           description: "Icon for paused state".to_string(),
           value: SettingValue::String(self.user_config.behavior.paused_icon.clone()),
         },
+        #[cfg(feature = "cover-art")]
         SettingItem {
           id: "behavior.draw_cover_art".to_string(),
           name: "Draw Cover Art".to_string(),
           description: "Enable rendering song/episode cover art".to_string(),
           value: SettingValue::Bool(self.user_config.behavior.draw_cover_art),
         },
+        #[cfg(feature = "cover-art")]
         SettingItem {
           id: "behavior.draw_cover_art_forced".to_string(),
           name: "Force Draw Cover Art".to_string(),
@@ -2680,11 +2682,13 @@ impl App {
             self.user_config.behavior.paused_icon = v.clone();
           }
         }
+        #[cfg(feature = "cover-art")]
         "behavior.draw_cover_art" => {
           if let SettingValue::Bool(v) = setting.value {
             self.user_config.behavior.draw_cover_art = v;
           }
         }
+        #[cfg(feature = "cover-art")]
         "behavior.draw_cover_art_forced" => {
           if let SettingValue::Bool(v) = setting.value {
             self.user_config.behavior.draw_cover_art_forced = v;
